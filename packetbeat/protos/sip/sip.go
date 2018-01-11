@@ -43,19 +43,25 @@ var (
 // TODOなんやこれ
 //  ハッシュサイズの最大値の模様　計算ロジックは不明 a magic number!!
 // const maxDNSTupleRawSize = 16 + 16 + 2 + 2 + 4 + 1 // bytes?
-const maxHashableSipTupleRawSize = 1024
+const maxHashableSipTupleRawSize = 16 + // ip addr (src) 128bit(ip v6)
+                                   16 + // ip addr (dst) 128bit(ip v6)
+                                    2 + // port number (src) 16bit
+                                    2 + // port number (dst) 16bit
+                                    4 + // id 32bit
+                                    1   // transport 8bit 
 
 // TODOなんやこれ
 // そのDNSメッセージががQueryなのかRespoinseなのかを表すためのモノっぽい。
 // SIPにしたら request = false, response = true か？
-// Constants used to associate the DNS QR flag with a meaningful value.
+// Constants used to associate the SIP Req. Res. flag with a meaningful value.
+//dns/ Constants used to associate the DNS QR flag with a meaningful value.
 const (
-    query    = false
+    //dns/ query    = false
+    request  = false
     response = true
 )
 
 // きっとトランスポートプロトコルのTCPだとかUDPだとかを保持する変数
-// IPレイヤのプロコル表示が8bit tcp:6 udp:17と思いきや違うっぽい
 // transport=0 tcp, transport=1, udpみたいでつ。
 // Transport protocol.
 type transport uint8
@@ -94,30 +100,54 @@ func (t transport) String() string {
 
 type hashableSIPTuple [maxHashableSipTupleRawSize]byte
 
-// DnsMessage contains a single DNS message.
-type dnsMessage struct {
+// SipMessage contains a single SIP message.
+type sipMessage struct {
     ts           time.Time          // Time when the message was received.
+
     tuple        common.IPPortTuple // Source and destination addresses of packet.
     cmdlineTuple *common.CmdlineTuple
-    data         *mkdns.Msg // Parsed DNS packet data.
-    length       int        // Length of the DNS message in bytes (without DecodeOffset).
+
+    //dns/ data         *mkdns.Msg // Parsed DNS packet data.
+
+    // SIP FirstLines
+    isRequest    bool
+    method       common.NetString
+    statusCode   uint16
+    statusPhrase common.NetString
+
+    // SIP Headers
+    headers      map[string]common.NetString
+    size         uint64
+
+    // Raw Data
+    raw          []byte
+
+    // Offsets
+    start        int
+    end          int
+    bodyOffset   int
+
 }
 
-// DnsTuple contains source IP/port, destination IP/port, transport protocol,
-// and DNS ID.
-type dnsTuple struct {
+// SIPTuple contains source IP/port, destination IP/port, transport protocol,
+// and SIP Hashed Call-ID.
+// Memo:
+//  Call-IDの長さは決まらない気がするのでハッシュ化して長さを一定にする・・
+type sipTuple struct {
     ipLength         int
     srcIP, dstIP     net.IP
     srcPort, dstPort uint16
     transport        transport
-    id               uint16
+    //hashed_callid    uint32??
+    id             uint16 //idと一応しておくだれがIDふるのかわからんけど・・・ 
 
-    raw    hashableDNSTuple // Src_ip:Src_port:Dst_ip:Dst_port:Transport:Id
-    revRaw hashableDNSTuple // Dst_ip:Dst_port:Src_ip:Src_port:Transport:Id
+    raw    hashableDNSTuple // Src_ip:Src_port:Dst_ip:Dst_port:Transport:id ***Hashed_Call-Id
+    revRaw hashableDNSTuple // Dst_ip:Dst_port:Src_ip:Src_port:Transport:id ***Hashed_Call-Id
 }
 
-func dnsTupleFromIPPort(t *common.IPPortTuple, trans transport, id uint16) dnsTuple {
-    tuple := dnsTuple{
+
+func sipTupleFromIPPort(t *common.IPPortTuple, trans transport, id uint16) sipTuple {
+    tuple := sipTuple{
         ipLength:  t.IPLength,
         srcIP:     t.SrcIP,
         dstIP:     t.DstIP,
@@ -131,8 +161,8 @@ func dnsTupleFromIPPort(t *common.IPPortTuple, trans transport, id uint16) dnsTu
     return tuple
 }
 
-func (t dnsTuple) reverse() dnsTuple {
-    return dnsTuple{
+func (t sipTuple) reverse() sipTuple {
+    return sipTuple{
         ipLength:  t.ipLength,
         srcIP:     t.dstIP,
         dstIP:     t.srcIP,
@@ -145,7 +175,9 @@ func (t dnsTuple) reverse() dnsTuple {
     }
 }
 
-func (t *dnsTuple) computeHashebles() {
+//めっちゃハードコードやん・・
+// とりあえずDNSのままで
+func (t *sipTuple) computeHashebles() {
     copy(t.raw[0:16], t.srcIP)
     copy(t.raw[16:18], []byte{byte(t.srcPort >> 8), byte(t.srcPort)})
     copy(t.raw[18:34], t.dstIP)
@@ -161,7 +193,7 @@ func (t *dnsTuple) computeHashebles() {
     t.revRaw[39] = byte(t.transport)
 }
 
-func (t *dnsTuple) String() string {
+func (t *sipTuple) String() string {
     return fmt.Sprintf("DnsTuple src[%s:%d] dst[%s:%d] transport[%s] id[%d]",
         t.srcIP.String(),
         t.srcPort,

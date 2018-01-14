@@ -2,13 +2,16 @@
 package sip
 
 import (
-    "bytes"
+//    "bytes"
     "fmt"
     "net"
-    "sort"
-    "strconv"
+//    "sort"
+//    "strconv"
     "strings"
     "time"
+	//"crypto/sha256"
+	//"encoding/binary"
+	//"reflect"
 
     "github.com/elastic/beats/libbeat/beat"
     "github.com/elastic/beats/libbeat/common"
@@ -19,29 +22,10 @@ import (
 
 )
 
-type sipPlugin struct {
-    // Configuration data.
-    ports              []int
-    sendRequest        bool
-    sendResponse       bool
-    includeAuthorities bool
-    includeAdditionals bool
-
-    // SIPのアクティブなトランザクションをキャッシュする。
-    // Cache of active SIP transactions. The map key is the HashableSipTuple
-    // associated with the request.
-    transactions       *common.Cache
-    transactionTimeout time.Duration
-
-    results protos.Reporter // Channel where results are pushed.
-}
-
 var (
     debugf = logp.MakeDebug("sip")
 )
 
-// TODOなんやこれ
-//  ハッシュサイズの最大値の模様　計算ロジックは不明 a magic number!!
 // const maxDNSTupleRawSize = 16 + 16 + 2 + 2 + 4 + 1 // bytes?
 const maxHashableSipTupleRawSize = 16 + // ip addr (src) 128bit(ip v6)
                                    16 + // ip addr (dst) 128bit(ip v6)
@@ -49,6 +33,10 @@ const maxHashableSipTupleRawSize = 16 + // ip addr (src) 128bit(ip v6)
                                     2 + // port number (dst) 16bit
                                     4 + // id 32bit
                                     1   // transport 8bit 
+
+// Only EDNS packets should have their size beyond this value
+const maxDNSPacketSize = (1 << 9) // 512 (bytes)
+
 
 // TODOなんやこれ
 // そのDNSメッセージががQueryなのかRespoinseなのかを表すためのモノっぽい。
@@ -120,6 +108,7 @@ type sipMessage struct {
     size         uint64
 
     // Raw Data
+    data         []byte
     raw          []byte
 
     // Offsets
@@ -129,20 +118,51 @@ type sipMessage struct {
 
 }
 
-// SIPTuple contains source IP/port, destination IP/port, transport protocol,
-// and SIP Hashed Call-ID.
-// Memo:
-//  Call-IDの長さは決まらない気がするのでハッシュ化して長さを一定にする・・
-type sipTuple struct {
-    ipLength         int
-    srcIP, dstIP     net.IP
-    srcPort, dstPort uint16
-    transport        transport
-    //hashed_callid    uint32??
-    id             uint16 //idと一応しておくだれがIDふるのかわからんけど・・・ 
+// TODO
+// 管理方法を考える
+// TransactionよりもSIPの場合はDialogとしたほうがよいか？
+// そもそもRequest-Responseを識別する必要もあるのか・・・？
+// それともSIPのTransactionで管理したほうがよいか？
+type sipTransaction struct {
+    ts           time.Time // Time when the request was received.
+    tuple        sipTuple  // Key used to track this transaction in the transactionsMap.
+    responseTime int32     // Elapsed time in milliseconds between the request and response.
+    src          common.Endpoint
+    dst          common.Endpoint
+    transport    transport
+    notes        []string
+    // んーsipだしどうやってデータをもつべきだろうか・・・？
+    request  *sipMessage
+    response *sipMessage
+}
 
-    raw    hashableDNSTuple // Src_ip:Src_port:Dst_ip:Dst_port:Transport:id ***Hashed_Call-Id
-    revRaw hashableDNSTuple // Dst_ip:Dst_port:Src_ip:Src_port:Transport:id ***Hashed_Call-Id
+/**
+ * どの構造体にも属さないメソッド ------------------------------------
+ **/
+
+// protosに対してSIPと関数Newを紐付ける
+func init() {
+    protos.Register("sip", New)
+}
+
+// NewはProtosから呼び出されるっぽい。
+func New(
+    testMode bool,
+    results protos.Reporter,
+    cfg *common.Config,
+) (protos.Plugin, error) {
+    p := &sipPlugin{}
+    config := defaultConfig
+    if !testMode {
+        if err := cfg.Unpack(&config); err != nil {
+            return nil, err
+        }
+    }
+
+    if err := p.init(results, &config); err != nil {
+        return nil, err
+    }
+    return p, nil
 }
 
 
@@ -159,6 +179,181 @@ func sipTupleFromIPPort(t *common.IPPortTuple, trans transport, id uint16) sipTu
     tuple.computeHashebles()
 
     return tuple
+}
+
+func newTransaction(ts time.Time, tuple sipTuple, cmd common.CmdlineTuple) *sipTransaction {
+    trans := &sipTransaction{
+        transport: tuple.transport,
+        ts:        ts,
+        tuple:     tuple,
+    }
+    trans.src = common.Endpoint{
+        IP:   tuple.srcIP.String(),
+        Port: tuple.srcPort,
+        Proc: string(cmd.Src),
+    }
+    trans.dst = common.Endpoint{
+        IP:   tuple.dstIP.String(),
+        Port: tuple.dstPort,
+        Proc: string(cmd.Dst),
+    }
+    return trans
+}
+
+// Adds the SIP message data to the supplied MapStr.
+func addSIPToMapStr(m common.MapStr, sip []byte, authority bool, additional bool) {
+    m["id"] = sip[32:39]
+}
+
+
+// sipToString converts a SIP message to a string.
+func sipToString(sip []byte) string {
+    var a []string
+
+    return strings.Join(a, "; ")
+}
+
+// decodeSIPData decodes a byte array into a SIP struct. If an error occurs
+// then the returned sip pointer will be nil. This method recovers from panics
+// and is concurrency-safe.
+func decodeSIPData(transp transport, rawData []byte) (msg sipMessage, err error) {
+//    var offset int
+//    if transp == transportTCP {
+//        offset = decodeOffset
+//    }
+
+    // Recover from any panics that occur while parsing a packet.
+    defer func() {
+        if r := recover(); r != nil {
+            err = fmt.Errorf("panic: %v", r)
+        }
+    }()
+
+    cutPosS := []int{}
+    cutPosE := []int{}
+
+    byte_len := len(rawData)
+	start:=-1
+	end:=byte_len
+    for i,ch := range rawData {
+		//冒頭の\r\nを無視
+        if start == -1 {
+            if ch == byte('\n') || ch == byte('\r') {
+                continue
+            }else{
+				cutPosS = append(cutPosS,i)
+				start=i
+			}
+        }
+
+		//CRLFの全部の場所を取得
+        if i+2<byte_len &&
+                rawData[i+0] == byte('\r') && rawData[i+1] == byte('\n'){
+			cutPosE = append(cutPosE,i)
+			cutPosS = append(cutPosS,i+2)
+		}
+		//ヘッダ終了位置の確認
+        if i+4<byte_len &&
+                rawData[i+0] == byte('\r') && rawData[i+1] == byte('\n') &&
+		        rawData[i+2] == byte('\r') && rawData[i+3] == byte('\n'){
+			end=i+4
+			break
+		}
+    }
+
+	// TODO:ヘッダの終了位置がわからなかった時とかの処理
+	// fragmented packetが入ってきた場合はこっちに来るのでその処理を書かないと・・・
+	if start < 0 || byte_len <= end{
+		return msg, nil
+	}
+
+	// 正常系処理
+	// SIP
+	first_lines:=[]string{}
+	headers:=map[string][]string{}
+
+	var lastheader string
+	for i:=0;i<len(cutPosE);i++ {
+		s:=cutPosS[i]
+		e:=cutPosE[i]
+
+		if i==0 { // Requst-line or Status-Lineが入るはず。
+			first_lines=strings.SplitN(string(rawData[s:e])," ",3)
+		}else{
+			// 途中で改行された場合の処理(先頭がスペース、またはタブ)
+			// Call-Id: hogehoge--aaaaiii
+			//  higehige@hogehoge.com
+			// みたいなケース
+			if rawData[s] == byte(' ') || rawData[s] == byte('\t'){
+				if lastheader!=""{
+					lastelement:=headers[lastheader][len(headers[lastheader])-1]
+					// TrimSpaceは" "と"\t"の両方削除してくれる
+					lastelement+=strings.TrimSpace(string(rawData[s:e]))
+				}else{
+					// 当該行を無視する
+				}
+				continue
+			}
+			// 先頭がスペースまたはタブ出ない時はヘッダパラメータのはず
+			header_kv:=strings.SplitN(string(rawData[s:e]),":",2)
+			key:=strings.ToLower(strings.TrimSpace(header_kv[0]))
+			val:=strings.TrimSpace(header_kv[1])
+			_,ok := headers[key]
+			if !ok{
+				headers[key]=[]string{}
+			}
+
+			headers[key]=append(headers[key],val)
+			lastheader=key
+		}
+	}
+
+	// mandatory header fields check
+	to         , existTo          := headers["to"]
+	from       , existFrom        := headers["from"]
+	cseq       , existCSeq        := headers["cseq"]
+	callid     , existCallId      := headers["call-id"]
+	maxfrowards, existMaxForwards := headers["max-forwards"]
+	via        , existVia         := headers["via"]
+
+	// 必須ヘッダ不足
+	if !(existTo && existFrom && existCSeq && existCallId && existMaxForwards && existVia){
+	}
+
+	contenttype, existContentType := headers["content-type"]
+
+	callid:=headers["call-id"][len(headers["call-id"])-1]
+	fmt.Printf("%s\n",first_lines[0])
+	fmt.Printf("%s\n",callid)
+	if existContentType{
+		fmt.Printf("%s\n",contenttype)
+	}
+
+    return msg, nil
+}
+
+
+
+/**
+ ******************************************************************
+ * sipTuple
+ *******************************************************************
+ **/
+
+ // SIPTuple contains source IP/port, destination IP/port, transport protocol,
+// and SIP Hashed Call-ID.
+// Memo:
+//  Call-IDの長さは決まらない気がするのでハッシュ化して長さを一定にする・・
+type sipTuple struct {
+    ipLength         int
+    srcIP, dstIP     net.IP
+    srcPort, dstPort uint16
+    transport        transport
+    //hashed_callid    uint32??
+    id             uint16 //idと一応しておくだれがIDふるのかわからんけど・・・ 
+
+    raw    hashableSIPTuple // Src_ip:Src_port:Dst_ip:Dst_port:Transport:id ***Hashed_Call-Id
+    revRaw hashableSIPTuple // Dst_ip:Dst_port:Src_ip:Src_port:Transport:id ***Hashed_Call-Id
 }
 
 func (t sipTuple) reverse() sipTuple {
@@ -194,7 +389,7 @@ func (t *sipTuple) computeHashebles() {
 }
 
 func (t *sipTuple) String() string {
-    return fmt.Sprintf("DnsTuple src[%s:%d] dst[%s:%d] transport[%s] id[%d]",
+    return fmt.Sprintf("sipTuple src[%s:%d] dst[%s:%d] transport[%s] id[%d]",
         t.srcIP.String(),
         t.srcPort,
         t.dstIP.String(),
@@ -205,197 +400,181 @@ func (t *sipTuple) String() string {
 
 // Hashable returns a hashable value that uniquely identifies
 // the DNS tuple.
-func (t *dnsTuple) hashable() hashableDNSTuple {
+func (t *sipTuple) hashable() hashableSIPTuple {
     return t.raw
 }
 
 // Hashable returns a hashable value that uniquely identifies
 // the DNS tuple after swapping the source and destination.
-func (t *dnsTuple) revHashable() hashableDNSTuple {
+func (t *sipTuple) revHashable() hashableSIPTuple {
     return t.revRaw
 }
 
-// getTransaction returns the transaction associated with the given
-// HashableDnsTuple. The lookup key should be the HashableDnsTuple associated
-// with the request (src is the requestor). Nil is returned if the entry
-// does not exist.
-func (dns *sipPlugin) getTransaction(k hashableDNSTuple) *dnsTransaction {
-    v := dns.transactions.Get(k)
-    if v != nil {
-        return v.(*dnsTransaction)
-    }
-    return nil
+
+/**
+ ******************************************************************
+ * sipPlugin
+ ******************************************************************
+ **/
+type sipPlugin struct {
+    // Configuration data.
+    ports              []int
+    sendRequest        bool
+    sendResponse       bool
+    includeAuthorities bool
+    includeAdditionals bool
+
+    // SIPのアクティブなトランザクションをキャッシュする。
+    // Cache of active SIP transactions. The map key is the HashableSipTuple
+    // associated with the request.
+    transactions       *common.Cache
+    transactionTimeout time.Duration
+
+    results protos.Reporter // Channel where results are pushed.
 }
-
-type dnsTransaction struct {
-    ts           time.Time // Time when the request was received.
-    tuple        dnsTuple  // Key used to track this transaction in the transactionsMap.
-    responseTime int32     // Elapsed time in milliseconds between the request and response.
-    src          common.Endpoint
-    dst          common.Endpoint
-    transport    transport
-    notes        []string
-
-    request  *dnsMessage
-    response *dnsMessage
-}
-
-func init() {
-    protos.Register("dns", New)
-}
-
-func New(
-    testMode bool,
-    results protos.Reporter,
-    cfg *common.Config,
-) (protos.Plugin, error) {
-    p := &sipPlugin{}
-    config := defaultConfig
-    if !testMode {
-        if err := cfg.Unpack(&config); err != nil {
-            return nil, err
-        }
-    }
-
-    if err := p.init(results, &config); err != nil {
-        return nil, err
-    }
-    return p, nil
-}
-
-func (dns *sipPlugin) init(results protos.Reporter, config *dnsConfig) error {
-    dns.setFromConfig(config)
-    dns.transactions = common.NewCacheWithRemovalListener(
-        dns.transactionTimeout,
+// Transactionとしてタイムアウトさせる方法とかがここにありそう。
+func (sip *sipPlugin) init(results protos.Reporter, config *sipConfig) error {
+    sip.setFromConfig(config)
+    sip.transactions = common.NewCacheWithRemovalListener(
+        sip.transactionTimeout,
         protos.DefaultTransactionHashSize,
         func(k common.Key, v common.Value) {
-            trans, ok := v.(*dnsTransaction)
+            trans, ok := v.(*sipTransaction)
             if !ok {
-                logp.Err("Expired value is not a *DnsTransaction.")
+                logp.Err("Expired value is not a *SipTransaction.")
                 return
             }
-            dns.expireTransaction(trans)
+            sip.expireTransaction(trans)
         })
-    dns.transactions.StartJanitor(dns.transactionTimeout)
+    sip.transactions.StartJanitor(sip.transactionTimeout)
 
-    dns.results = results
+    sip.results = results
 
     return nil
 }
+// 参考HTTPのinit
+// // Init initializes the HTTP protocol analyser.
+// func (http *httpPlugin) init(results protos.Reporter, config *httpConfig) error {
+//     http.setFromConfig(config)
+// 
+//     isDebug = logp.IsDebug("http")
+//     isDetailed = logp.IsDebug("httpdetailed")
+//     http.results = results
+//     return nil
+// }
 
-func (dns *sipPlugin) setFromConfig(config *dnsConfig) error {
-    dns.ports = config.Ports
-    dns.sendRequest = config.SendRequest
-    dns.sendResponse = config.SendResponse
-    dns.includeAuthorities = config.IncludeAuthorities
-    dns.includeAdditionals = config.IncludeAdditionals
-    dns.transactionTimeout = config.TransactionTimeout
+
+// configの値からSIPとして扱うポートとかいろいろ設定できるっぽい
+func (sip *sipPlugin) setFromConfig(config *sipConfig) error {
+    sip.ports = config.Ports
+    sip.sendRequest = config.SendRequest
+    sip.sendResponse = config.SendResponse
+    sip.includeAuthorities = config.IncludeAuthorities
+    sip.includeAdditionals = config.IncludeAdditionals
+    sip.transactionTimeout = config.TransactionTimeout
     return nil
 }
 
-func newTransaction(ts time.Time, tuple dnsTuple, cmd common.CmdlineTuple) *dnsTransaction {
-    trans := &dnsTransaction{
-        transport: tuple.transport,
-        ts:        ts,
-        tuple:     tuple,
+// getTransaction returns the transaction associated with the given
+// HashableSipTuple. The lookup key should be the HashableDnsTuple associated
+// with the request (src is the requestor). Nil is returned if the entry
+// does not exist.
+func (sip *sipPlugin) getTransaction(k hashableSIPTuple) *sipTransaction {
+    v := sip.transactions.Get(k)
+    if v != nil {
+        return v.(*sipTransaction)
     }
-    trans.src = common.Endpoint{
-        IP:   tuple.srcIP.String(),
-        Port: tuple.srcPort,
-        Proc: string(cmd.Src),
-    }
-    trans.dst = common.Endpoint{
-        IP:   tuple.dstIP.String(),
-        Port: tuple.dstPort,
-        Proc: string(cmd.Dst),
-    }
-    return trans
+    return nil
 }
 
 // deleteTransaction deletes an entry from the transaction map and returns
 // the deleted element. If the key does not exist then nil is returned.
-func (dns *sipPlugin) deleteTransaction(k hashableDNSTuple) *dnsTransaction {
-    v := dns.transactions.Delete(k)
+func (sip *sipPlugin) deleteTransaction(k hashableSIPTuple) *sipTransaction {
+    v := sip.transactions.Delete(k)
     if v != nil {
-        return v.(*dnsTransaction)
+        return v.(*sipTransaction)
     }
     return nil
 }
 
-func (dns *sipPlugin) GetPorts() []int {
-    return dns.ports
+func (sip *sipPlugin) GetPorts() []int {
+    return sip.ports
 }
 
-func (dns *sipPlugin) ConnectionTimeout() time.Duration {
-    return dns.transactionTimeout
+func (sip *sipPlugin) ConnectionTimeout() time.Duration {
+    return sip.transactionTimeout
 }
 
-func (dns *sipPlugin) receivedDNSRequest(tuple *dnsTuple, msg *dnsMessage) {
+func (sip *sipPlugin) receivedSIPRequest(tuple *sipTuple, msg *sipMessage) {
     debugf("Processing query. %s", tuple.String())
 
-    trans := dns.deleteTransaction(tuple.hashable())
+    trans := sip.deleteTransaction(tuple.hashable())
     if trans != nil {
         // This happens if a client puts multiple requests in flight
         // with the same ID.
-        trans.notes = append(trans.notes, duplicateQueryMsg.Error())
-        debugf("%s %s", duplicateQueryMsg.Error(), tuple.String())
-        dns.publishTransaction(trans)
-        dns.deleteTransaction(trans.tuple.hashable())
+        trans.notes = append(trans.notes, "duplicateQueryMsg.Error()")
+        debugf("%s %s", "duplicateQueryMsg.Error()", tuple.String())
+        sip.publishTransaction(trans)
+        sip.deleteTransaction(trans.tuple.hashable())
     }
 
     trans = newTransaction(msg.ts, *tuple, *msg.cmdlineTuple)
 
-    if tuple.transport == transportUDP && (msg.data.IsEdns0() != nil) && msg.length > maxDNSPacketSize {
-        trans.notes = append(trans.notes, udpPacketTooLarge.Error())
-        debugf("%s", udpPacketTooLarge.Error())
-    }
+// コンパイル通すためにいったんコメントアウト
+//    if tuple.transport == transportUDP && (msg.data.IsEdns0() != nil) && msg.length > maxSIPPacketSize {
+//        trans.notes = append(trans.notes, "udpPacketTooLarge.Error()")
+//        debugf("%s", "udpPacketTooLarge.Error()")
+//    }
 
-    dns.transactions.Put(tuple.hashable(), trans)
+    sip.transactions.Put(tuple.hashable(), trans)
     trans.request = msg
 }
 
-func (dns *sipPlugin) receivedDNSResponse(tuple *dnsTuple, msg *dnsMessage) {
+func (sip *sipPlugin) receivedSIPResponse(tuple *sipTuple, msg *sipMessage) {
     debugf("Processing response. %s", tuple.String())
 
-    trans := dns.getTransaction(tuple.revHashable())
+    trans := sip.getTransaction(tuple.revHashable())
     if trans == nil {
         trans = newTransaction(msg.ts, tuple.reverse(), common.CmdlineTuple{
             Src: msg.cmdlineTuple.Dst, Dst: msg.cmdlineTuple.Src})
-        trans.notes = append(trans.notes, orphanedResponse.Error())
-        debugf("%s %s", orphanedResponse.Error(), tuple.String())
+        trans.notes = append(trans.notes, "orphanedResponse.Error()")
+        debugf("%s %s", "orphanedResponse.Error()", tuple.String())
         unmatchedResponses.Add(1)
     }
 
     trans.response = msg
 
     if tuple.transport == transportUDP {
-        respIsEdns := msg.data.IsEdns0() != nil
-        if !respIsEdns && msg.length > maxDNSPacketSize {
-            trans.notes = append(trans.notes, udpPacketTooLarge.responseError())
-            debugf("%s", udpPacketTooLarge.responseError())
-        }
-
-        request := trans.request
-        if request != nil {
-            reqIsEdns := request.data.IsEdns0() != nil
-
-            switch {
-            case reqIsEdns && !respIsEdns:
-                trans.notes = append(trans.notes, respEdnsNoSupport.Error())
-                debugf("%s %s", respEdnsNoSupport.Error(), tuple.String())
-            case !reqIsEdns && respIsEdns:
-                trans.notes = append(trans.notes, respEdnsUnexpected.Error())
-                debugf("%s %s", respEdnsUnexpected.Error(), tuple.String())
-            }
-        }
+// コンパイル通すためにいったんコメントアウト
+//        respIsEdns := msg.data.IsEdns0() != nil
+//        if !respIsEdns && msg.length > maxSIPPacketSize {
+//            trans.notes = append(trans.notes, udpPacketTooLarge.responseError())
+//            debugf("%s", udpPacketTooLarge.responseError())
+//        }
+//
+//        request := trans.request
+//        if request != nil {
+//            reqIsEdns := request.data.IsEdns0() != nil
+//
+//            switch {
+//            case reqIsEdns && !respIsEdns:
+//                trans.notes = append(trans.notes, respEdnsNoSupport.Error())
+//                debugf("%s %s", respEdnsNoSupport.Error(), tuple.String())
+//            case !reqIsEdns && respIsEdns:
+//                trans.notes = append(trans.notes, respEdnsUnexpected.Error())
+//                debugf("%s %s", respEdnsUnexpected.Error(), tuple.String())
+//            }
+//        }
     }
 
-    dns.publishTransaction(trans)
-    dns.deleteTransaction(trans.tuple.hashable())
+    sip.publishTransaction(trans)
+    sip.deleteTransaction(trans.tuple.hashable())
 }
 
-func (dns *sipPlugin) publishTransaction(t *dnsTransaction) {
-    if dns.results == nil {
+// publishTransactionはひとつのトランザクションを
+// Elasticsearchに書き出すためのデータを作る過程
+func (sip *sipPlugin) publishTransaction(t *sipTransaction) {
+    if sip.results == nil {
         return
     }
 
@@ -403,442 +582,186 @@ func (dns *sipPlugin) publishTransaction(t *dnsTransaction) {
 
     timestamp := t.ts
     fields := common.MapStr{}
-    fields["type"] = "dns"
+    fields["type"] = "sip"
     fields["transport"] = t.transport.String()
     fields["src"] = &t.src
     fields["dst"] = &t.dst
-    fields["status"] = common.ERROR_STATUS
-    if len(t.notes) == 1 {
-        fields["notes"] = t.notes[0]
-    } else if len(t.notes) > 1 {
-        fields["notes"] = strings.Join(t.notes, " ")
-    }
+// コンパイル通すためにいったんコメントアウト
+//    fields["status"] = common.ERROR_STATUS
+//    if len(t.notes) == 1 {
+//        fields["notes"] = t.notes[0]
+//    } else if len(t.notes) > 1 {
+//        fields["notes"] = strings.Join(t.notes, " ")
+//    }
+//
+    sipEvent := common.MapStr{}
+    fields["sip"] = sipEvent
 
-    dnsEvent := common.MapStr{}
-    fields["dns"] = dnsEvent
+// コンパイル通すためにいったんコメントアウト
+//    if t.request != nil && t.response != nil {
+//        fields["bytes_in"] = t.request.length
+//        fields["bytes_out"] = t.response.length
+//        fields["responsetime"] = int32(t.response.ts.Sub(t.ts).Nanoseconds() / 1e6)
+//        fields["method"] = sipOpCodeToString(t.request.data.Opcode)
+//        if len(t.request.data.Question) > 0 {
+//            fields["query"] = sipQuestionToString(t.request.data.Question[0])
+//            fields["resource"] = t.request.data.Question[0].Name
+//        }
+//        addSIPToMapStr(sipEvent, t.response.data, sip.includeAuthorities,
+//            sip.includeAdditionals)
+//
+//        if t.response.data.Rcode == 0 {
+//            fields["status"] = common.OK_STATUS
+//        }
+//
+//        if sip.sendRequest {
+//            fields["request"] = sipToString(t.request.data)
+//        }
+//        if sip.sendResponse {
+//            fields["response"] = sipToString(t.response.data)
+//        }
+//    } else if t.request != nil {
+//        fields["bytes_in"] = t.request.length
+//        fields["method"] = sipOpCodeToString(t.request.data.Opcode)
+//        if len(t.request.data.Question) > 0 {
+//            fields["query"] = sipQuestionToString(t.request.data.Question[0])
+//            fields["resource"] = t.request.data.Question[0].Name
+//        }
+//        addSIPToMapStr(sipEvent, t.request.data, sip.includeAuthorities,
+//            sip.includeAdditionals)
+//
+//        if sip.sendRequest {
+//            fields["request"] = sipToString(t.request.data)
+//        }
+//    } else if t.response != nil {
+//        fields["bytes_out"] = t.response.length
+//        fields["method"] = sipOpCodeToString(t.response.data.Opcode)
+//        if len(t.response.data.Question) > 0 {
+//            fields["query"] = sipQuestionToString(t.response.data.Question[0])
+//            fields["resource"] = t.response.data.Question[0].Name
+//        }
+//        addSIPToMapStr(sipEvent, t.response.data, sip.includeAuthorities,
+//            sip.includeAdditionals)
+//        if sip.sendResponse {
+//            fields["response"] = sipToString(t.response.data)
+//        }
+//    }
 
-    if t.request != nil && t.response != nil {
-        fields["bytes_in"] = t.request.length
-        fields["bytes_out"] = t.response.length
-        fields["responsetime"] = int32(t.response.ts.Sub(t.ts).Nanoseconds() / 1e6)
-        fields["method"] = dnsOpCodeToString(t.request.data.Opcode)
-        if len(t.request.data.Question) > 0 {
-            fields["query"] = dnsQuestionToString(t.request.data.Question[0])
-            fields["resource"] = t.request.data.Question[0].Name
-        }
-        addDNSToMapStr(dnsEvent, t.response.data, dns.includeAuthorities,
-            dns.includeAdditionals)
-
-        if t.response.data.Rcode == 0 {
-            fields["status"] = common.OK_STATUS
-        }
-
-        if dns.sendRequest {
-            fields["request"] = dnsToString(t.request.data)
-        }
-        if dns.sendResponse {
-            fields["response"] = dnsToString(t.response.data)
-        }
-    } else if t.request != nil {
-        fields["bytes_in"] = t.request.length
-        fields["method"] = dnsOpCodeToString(t.request.data.Opcode)
-        if len(t.request.data.Question) > 0 {
-            fields["query"] = dnsQuestionToString(t.request.data.Question[0])
-            fields["resource"] = t.request.data.Question[0].Name
-        }
-        addDNSToMapStr(dnsEvent, t.request.data, dns.includeAuthorities,
-            dns.includeAdditionals)
-
-        if dns.sendRequest {
-            fields["request"] = dnsToString(t.request.data)
-        }
-    } else if t.response != nil {
-        fields["bytes_out"] = t.response.length
-        fields["method"] = dnsOpCodeToString(t.response.data.Opcode)
-        if len(t.response.data.Question) > 0 {
-            fields["query"] = dnsQuestionToString(t.response.data.Question[0])
-            fields["resource"] = t.response.data.Question[0].Name
-        }
-        addDNSToMapStr(dnsEvent, t.response.data, dns.includeAuthorities,
-            dns.includeAdditionals)
-        if dns.sendResponse {
-            fields["response"] = dnsToString(t.response.data)
-        }
-    }
-
-    dns.results(beat.Event{
+    sip.results(beat.Event{
         Timestamp: timestamp,
         Fields:    fields,
     })
 }
 
-func (dns *sipPlugin) expireTransaction(t *dnsTransaction) {
-    t.notes = append(t.notes, noResponse.Error())
-    debugf("%s %s", noResponse.Error(), t.tuple.String())
-    dns.publishTransaction(t)
+// トランザクションがタイムアウトした時の処理
+func (sip *sipPlugin) expireTransaction(t *sipTransaction) {
+    t.notes = append(t.notes, "noResponse.Error()")
+    debugf("%s %s", "noResponse.Error()", t.tuple.String())
+    sip.publishTransaction(t)
     unmatchedRequests.Add(1)
 }
 
-// Adds the DNS message data to the supplied MapStr.
-func addDNSToMapStr(m common.MapStr, dns *mkdns.Msg, authority bool, additional bool) {
-    m["id"] = dns.Id
-    m["op_code"] = dnsOpCodeToString(dns.Opcode)
+// udpパケットで呼ばれた際のパース
+func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
+    defer logp.Recover("Sip ParseUdp")
+    packetSize := len(pkt.Payload)
 
-    m["flags"] = common.MapStr{
-        "authoritative":       dns.Authoritative,
-        "truncated_response":  dns.Truncated,
-        "recursion_desired":   dns.RecursionDesired,
-        "recursion_available": dns.RecursionAvailable,
-        "authentic_data":      dns.AuthenticatedData, // [RFC4035]
-        "checking_disabled":   dns.CheckingDisabled,  // [RFC4035]
-    }
-    m["response_code"] = dnsResponseCodeToString(dns.Rcode)
+    debugf("Parsing packet addressed with %s of length %d.",
+        pkt.Tuple.String(), packetSize)
 
-    if len(dns.Question) > 0 {
-        q := dns.Question[0]
-        qMapStr := common.MapStr{
-            "name":  q.Name,
-            "type":  dnsTypeToString(q.Qtype),
-            "class": dnsClassToString(q.Qclass),
-        }
-        m["question"] = qMapStr
+    //sipPkt, err := decodeSIPData(transportUDP, pkt.Payload)
+    decodeSIPData(transportUDP, pkt.Payload)
 
-        eTLDPlusOne, err := publicsuffix.EffectiveTLDPlusOne(strings.TrimRight(q.Name, "."))
-        if err == nil {
-            qMapStr["etld_plus_one"] = eTLDPlusOne + "."
-        }
-    }
-
-    rrOPT := dns.IsEdns0()
-    if rrOPT != nil {
-        m["opt"] = optToMapStr(rrOPT)
-    }
-
-    m["answers_count"] = len(dns.Answer)
-    if len(dns.Answer) > 0 {
-        m["answers"] = rrsToMapStrs(dns.Answer)
-    }
-
-    m["authorities_count"] = len(dns.Ns)
-    if authority && len(dns.Ns) > 0 {
-        m["authorities"] = rrsToMapStrs(dns.Ns)
-    }
-
-    if rrOPT != nil {
-        m["additionals_count"] = len(dns.Extra) - 1
-    } else {
-        m["additionals_count"] = len(dns.Extra)
-    }
-    if additional && len(dns.Extra) > 0 {
-        rrsMapStrs := rrsToMapStrs(dns.Extra)
-        // We do not want OPT RR to appear in the 'additional' section,
-        // that's why rrsMapStrs could be empty even though len(dns.Extra) > 0
-        if len(rrsMapStrs) > 0 {
-            m["additionals"] = rrsMapStrs
-        }
-    }
-}
-
-func optToMapStr(rrOPT *mkdns.OPT) common.MapStr {
-    optMapStr := common.MapStr{
-        "do":        rrOPT.Do(), // true if DNSSEC
-        "version":   strconv.FormatUint(uint64(rrOPT.Version()), 10),
-        "udp_size":  rrOPT.UDPSize(),
-        "ext_rcode": dnsResponseCodeToString(rrOPT.ExtendedRcode()),
-    }
-    for _, o := range rrOPT.Option {
-        switch o.(type) {
-        case *mkdns.EDNS0_DAU:
-            optMapStr["dau"] = o.String()
-        case *mkdns.EDNS0_DHU:
-            optMapStr["dhu"] = o.String()
-        case *mkdns.EDNS0_EXPIRE:
-            optMapStr["local"] = o.String()
-        case *mkdns.EDNS0_LLQ:
-            optMapStr["llq"] = o.String()
-        case *mkdns.EDNS0_LOCAL:
-            optMapStr["local"] = o.String()
-        case *mkdns.EDNS0_N3U:
-            optMapStr["n3u"] = o.String()
-        case *mkdns.EDNS0_NSID:
-            optMapStr["nsid"] = o.String()
-        case *mkdns.EDNS0_SUBNET:
-            var draft string
-            if o.(*mkdns.EDNS0_SUBNET).DraftOption {
-                draft = " draft"
-            }
-            optMapStr["subnet"] = o.String() + draft
-        case *mkdns.EDNS0_UL:
-            optMapStr["ul"] = o.String()
-        }
-    }
-    return optMapStr
-}
-
-// rrsToMapStr converts an slice of RR's to an slice of MapStr's.
-func rrsToMapStrs(records []mkdns.RR) []common.MapStr {
-    mapStrSlice := make([]common.MapStr, 0, len(records))
-    for _, rr := range records {
-        rrHeader := rr.Header()
-
-        mapStr := rrToMapStr(rr)
-        if len(mapStr) == 0 { // OPT pseudo-RR returns an empty MapStr
-            continue
-        }
-        mapStr["name"] = rrHeader.Name
-        mapStr["type"] = dnsTypeToString(rrHeader.Rrtype)
-        mapStr["class"] = dnsClassToString(rrHeader.Class)
-        mapStr["ttl"] = strconv.FormatInt(int64(rrHeader.Ttl), 10)
-        mapStrSlice = append(mapStrSlice, mapStr)
-    }
-    return mapStrSlice
-}
-
-// Convert all RDATA fields of a RR to a single string
-// fields are ordered alphabetically with 'data' as the last element
+//    sipPkt, err := decodeSIPData(transportUDP, pkt.Payload)
+//    if err != nil {
+//        // This means that malformed requests or responses are being sent or
+//        // that someone is attempting to the DNS port for non-DNS traffic. Both
+//        // are issues that a monitoring system should report.
+//        debugf("%s", err.Error())
+//        return
+//    }
 //
-// TODO An improvement would be to replace 'data' by the real field name
-// It would require some changes in unit tests
-func rrToString(rr mkdns.RR) string {
-    var st string
-    var keys []string
-
-    mapStr := rrToMapStr(rr)
-    data, ok := mapStr["data"]
-    delete(mapStr, "data")
-
-    for k := range mapStr {
-        keys = append(keys, k)
-    }
-    sort.Strings(keys)
-
-    var b bytes.Buffer
-    for _, k := range keys {
-        v := mapStr[k]
-        switch x := v.(type) {
-        case int:
-            fmt.Fprintf(&b, "%s %d, ", k, x)
-        case string:
-            fmt.Fprintf(&b, "%s %s, ", k, x)
-        }
-    }
-    if !ok {
-        st = strings.TrimSuffix(b.String(), ", ")
-        return st
-    }
-
-    switch x := data.(type) {
-    case int:
-        fmt.Fprintf(&b, "%d", x)
-    case string:
-        fmt.Fprintf(&b, "%s", x)
-    }
-    return b.String()
+//    sipTuple := sipTupleFromIPPort(&pkt.Tuple, transportUDP, sipPkt.Id)
+//    dnsMsg := &dnsMessage{
+//        ts:           pkt.Ts,
+//        tuple:        pkt.Tuple,
+//        cmdlineTuple: procs.ProcWatcher.FindProcessesTuple(&pkt.Tuple),
+//        data:         sipPkt,
+//        length:       packetSize,
+//    }
+//
+//    if sipMsg.data.Response {
+//        sip.receivedSIPResponse(&sipTuple, sipMsg)
+//    } else /* Query */ {
+//        sip.receivedSIPRequest(&sipTuple, sipMsg)
+//    }
 }
-
-func rrToMapStr(rr mkdns.RR) common.MapStr {
-    mapStr := common.MapStr{}
-    rrType := rr.Header().Rrtype
-
-    switch x := rr.(type) {
-    default:
-        // We don't have special handling for this type
-        debugf("No special handling for RR type %s", dnsTypeToString(rrType))
-        unsupportedRR := new(mkdns.RFC3597)
-        err := unsupportedRR.ToRFC3597(x)
-        if err == nil {
-            rData, err := hexStringToString(unsupportedRR.Rdata)
-            mapStr["data"] = rData
-            if err != nil {
-                debugf("%s", err.Error())
-            }
-        } else {
-            debugf("Rdata for the unhandled RR type %s could not be fetched", dnsTypeToString(rrType))
-        }
-    case *mkdns.A:
-        mapStr["data"] = x.A.String()
-    case *mkdns.AAAA:
-        mapStr["data"] = x.AAAA.String()
-    case *mkdns.CNAME:
-        mapStr["data"] = x.Target
-    case *mkdns.DNSKEY:
-        mapStr["flags"] = strconv.Itoa(int(x.Flags))
-        mapStr["protocol"] = strconv.Itoa(int(x.Protocol))
-        mapStr["algorithm"] = dnsAlgorithmToString(x.Algorithm)
-        mapStr["data"] = x.PublicKey
-    case *mkdns.DS:
-        mapStr["key_tag"] = strconv.Itoa(int(x.KeyTag))
-        mapStr["algorithm"] = dnsAlgorithmToString(x.Algorithm)
-        mapStr["digest_type"] = dnsHashToString(x.DigestType)
-        mapStr["data"] = strings.ToUpper(x.Digest)
-    case *mkdns.MX:
-        mapStr["preference"] = x.Preference
-        mapStr["data"] = x.Mx
-    case *mkdns.NS:
-        mapStr["data"] = x.Ns
-    case *mkdns.NSEC:
-        mapStr["type_bits"] = dnsTypeBitsMapToString(x.TypeBitMap)
-        mapStr["data"] = x.NextDomain
-    case *mkdns.NSEC3:
-        mapStr["hash"] = dnsHashToString(x.Hash)
-        mapStr["flags"] = strconv.Itoa(int(x.Flags))
-        mapStr["iterations"] = strconv.Itoa(int(x.Iterations))
-        mapStr["salt"] = dnsSaltToString(x.Salt)
-        mapStr["type_bits"] = dnsTypeBitsMapToString(x.TypeBitMap)
-        mapStr["data"] = x.NextDomain
-    case *mkdns.NSEC3PARAM:
-        mapStr["hash"] = dnsHashToString(x.Hash)
-        mapStr["flags"] = strconv.Itoa(int(x.Flags))
-        mapStr["iterations"] = strconv.Itoa(int(x.Iterations))
-        mapStr["data"] = dnsSaltToString(x.Salt)
-    case *mkdns.OPT: // EDNS [RFC6891]
-        // OPT pseudo-RR is managed in addDnsToMapStr function
-        return nil
-    case *mkdns.PTR:
-        mapStr["data"] = x.Ptr
-    case *mkdns.RFC3597:
-        // Miekg/dns lib doesn't handle this type
-        debugf("Unknown RR type %s", dnsTypeToString(rrType))
-        rData, err := hexStringToString(x.Rdata)
-        mapStr["data"] = rData
-        if err != nil {
-            debugf("%s", err.Error())
-        }
-    case *mkdns.RRSIG:
-        mapStr["type_covered"] = dnsTypeToString(x.TypeCovered)
-        mapStr["algorithm"] = dnsAlgorithmToString(x.Algorithm)
-        mapStr["labels"] = strconv.Itoa(int(x.Labels))
-        mapStr["original_ttl"] = strconv.FormatInt(int64(x.OrigTtl), 10)
-        mapStr["expiration"] = mkdns.TimeToString(x.Expiration)
-        mapStr["inception"] = mkdns.TimeToString(x.Inception)
-        mapStr["key_tag"] = strconv.Itoa(int(x.KeyTag))
-        mapStr["signer_name"] = x.SignerName
-        mapStr["data"] = x.Signature
-    case *mkdns.SOA:
-        mapStr["rname"] = x.Mbox
-        mapStr["serial"] = x.Serial
-        mapStr["refresh"] = x.Refresh
-        mapStr["retry"] = x.Retry
-        mapStr["expire"] = x.Expire
-        mapStr["minimum"] = x.Minttl
-        mapStr["data"] = x.Ns
-    case *mkdns.SRV:
-        mapStr["priority"] = x.Priority
-        mapStr["weight"] = x.Weight
-        mapStr["port"] = x.Port
-        mapStr["data"] = x.Target
-    case *mkdns.TXT:
-        mapStr["data"] = strings.Join(x.Txt, " ")
-    }
-
-    return mapStr
-}
-
-// dnsQuestionToString converts a Question to a string.
-func dnsQuestionToString(q mkdns.Question) string {
-    name := q.Name
-
-    return fmt.Sprintf("class %s, type %s, %s", dnsClassToString(q.Qclass),
-        dnsTypeToString(q.Qtype), name)
-}
-
-// rrsToString converts an array of RR's to a
-// string.
-func rrsToString(r []mkdns.RR) string {
-    var rrStrs []string
-    for _, rr := range r {
-        rrStrs = append(rrStrs, rrToString(rr))
-    }
-    return strings.Join(rrStrs, "; ")
-}
-
-// dnsToString converts a DNS message to a string.
-func dnsToString(dns *mkdns.Msg) string {
-    var msgType string
-    if dns.Response {
-        msgType = "response"
-    } else {
-        msgType = "query"
-    }
-
-    var t []string
-    if dns.Authoritative {
-        t = append(t, "aa")
-    }
-    if dns.Truncated {
-        t = append(t, "tc")
-    }
-    if dns.RecursionDesired {
-        t = append(t, "rd")
-    }
-    if dns.RecursionAvailable {
-        t = append(t, "ra")
-    }
-    if dns.AuthenticatedData {
-        t = append(t, "ad")
-    }
-    if dns.CheckingDisabled {
-        t = append(t, "cd")
-    }
-    flags := strings.Join(t, " ")
-
-    var a []string
-    a = append(a, fmt.Sprintf("ID %d; QR %s; OPCODE %s; FLAGS %s; RCODE %s",
-        dns.Id, msgType, dnsOpCodeToString(dns.Opcode), flags,
-        dnsResponseCodeToString(dns.Rcode)))
-
-    if len(dns.Question) > 0 {
-        t = []string{}
-        for _, question := range dns.Question {
-            t = append(t, dnsQuestionToString(question))
-        }
-        a = append(a, fmt.Sprintf("QUESTION %s", strings.Join(t, "; ")))
-    }
-
-    if len(dns.Answer) > 0 {
-        a = append(a, fmt.Sprintf("ANSWER %s",
-            rrsToString(dns.Answer)))
-    }
-
-    if len(dns.Ns) > 0 {
-        a = append(a, fmt.Sprintf("AUTHORITY %s",
-            rrsToString(dns.Ns)))
-    }
-
-    if len(dns.Extra) > 0 {
-        a = append(a, fmt.Sprintf("ADDITIONAL %s",
-            rrsToString(dns.Extra)))
-    }
-
-    return strings.Join(a, "; ")
-}
-
-// decodeDnsData decodes a byte array into a DNS struct. If an error occurs
-// then the returned dns pointer will be nil. This method recovers from panics
-// and is concurrency-safe.
-// We do not handle Unpack ErrTruncated for now. See https://github.com/miekg/dns/pull/281
-func decodeDNSData(transp transport, rawData []byte) (dns *mkdns.Msg, err error) {
-    var offset int
-    if transp == transportTCP {
-        offset = decodeOffset
-    }
-
-    // Recover from any panics that occur while parsing a packet.
-    defer func() {
-        if r := recover(); r != nil {
-            err = fmt.Errorf("panic: %v", r)
-        }
-    }()
-
-    msg := &mkdns.Msg{}
-    err = msg.Unpack(rawData[offset:])
-
-    // Message should be more than 12 bytes.
-    // The 12 bytes value corresponds to a message header length.
-    // We use this check because Unpack does not return an error for some unvalid messages.
-    // TODO: can a better solution be found?
-    if msg.Len() <= 12 || err != nil {
-        return nil, nonDNSMsg
-    }
-    return msg, nil
-}
+// 参考：MemchaceのParseUDP
+// func (mc *memcache) ParseUDP(pkt *protos.Packet) {
+//     defer logp.Recover("ParseMemcache(UDP) exception")
+// 
+//     buffer := streambuf.NewFixed(pkt.Payload)
+//     header, err := parseUDPHeader(buffer)
+//     if err != nil {
+//         debug("parsing memcache udp header failed")
+//         return
+//     }
+// 
+//     debug("new udp datagram requestId=%v, seqNumber=%v, numDatagrams=%v",
+//         header.requestID, header.seqNumber, header.numDatagrams)
+// 
+//     // find connection object based on ips and ports (forward->reverse connection)
+//     connection, dir := mc.getUDPConnection(&pkt.Tuple)
+//     debug("udp connection: %p", connection)
+// 
+//     // get udp transaction combining forward/reverse direction 'streams'
+//     // for current requestId
+//     trans := connection.udpTransactionForID(header.requestID)
+//     debug("udp transaction (id=%v): %p", header.requestID, trans)
+// 
+//     // Clean old transaction. We do the cleaning after potentially adding a new
+//     // transaction to the connection object, so connection object will not be
+//     // cleaned accidentally (not bad, but let's rather reuse it)
+//     expTrans := mc.udpExpTrans.steal()
+//     for expTrans != nil {
+//         tmp := expTrans.next
+//         expTrans.connection.killTransaction(expTrans)
+//         expTrans = tmp
+//     }
+// 
+//     // get UDP transaction stream combining datagram packets in transaction
+//     udpMsg := trans.udpMessageForDir(&header, dir)
+//     if udpMsg.numDatagrams != header.numDatagrams {
+//         logp.Warn("number of datagram mismatches in stream")
+//         connection.killTransaction(trans)
+//         return
+//     }
+// 
+//     // try to combine datagrams into complete memcached message
+//     payload := udpMsg.addDatagram(&header, buffer.Bytes())
+//     done := false
+//     if payload != nil {
+//         // parse memcached message
+//         msg, err := parseUDP(&mc.config, pkt.Ts, payload)
+//         if err != nil {
+//             logp.Warn("failed to parse memcached(UDP) message: %s", err)
+//             connection.killTransaction(trans)
+//             return
+//         }
+// 
+//         // apply memcached to transaction
+//         done, err = mc.onUDPMessage(trans, &pkt.Tuple, dir, msg)
+//         if err != nil {
+//             logp.Warn("error processing memcache message: %s", err)
+//             connection.killTransaction(trans)
+//             done = true
+//         }
+//     }
+//     if !done {
+//         trans.timer = time.AfterFunc(mc.udpConfig.transTimeout, func() {
+//             debug("transaction timeout -> forward")
+//             mc.onUDPTrans(trans)
+//             mc.udpExpTrans.push(trans)
+//         })
+//     }
+// }

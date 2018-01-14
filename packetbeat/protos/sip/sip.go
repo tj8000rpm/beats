@@ -6,7 +6,7 @@ import (
     "fmt"
     "net"
 //    "sort"
-//    "strconv"
+    "strconv"
     "strings"
     "time"
 	//"crypto/sha256"
@@ -91,11 +91,8 @@ type hashableSIPTuple [maxHashableSipTupleRawSize]byte
 // SipMessage contains a single SIP message.
 type sipMessage struct {
     ts           time.Time          // Time when the message was received.
-
     tuple        common.IPPortTuple // Source and destination addresses of packet.
     cmdlineTuple *common.CmdlineTuple
-
-    //dns/ data         *mkdns.Msg // Parsed DNS packet data.
 
     // SIP FirstLines
     isRequest    bool
@@ -104,17 +101,23 @@ type sipMessage struct {
     statusPhrase common.NetString
 
     // SIP Headers
+	from         common.NetString
+	to           common.NetString
+	cseq         common.NetString
+	callid       common.NetString
     headers      map[string]common.NetString
-    size         uint64
+
+	// SIP Bodies
+	bodyies      map[string]common.NetString
 
     // Raw Data
-    data         []byte
     raw          []byte
 
     // Offsets
-    start        int
-    end          int
-    bodyOffset   int
+    hdr_start    int
+    hdr_end      int
+    bdy_start    int
+    bdy_end      int
 
 }
 
@@ -213,123 +216,8 @@ func sipToString(sip []byte) string {
     return strings.Join(a, "; ")
 }
 
-// decodeSIPData decodes a byte array into a SIP struct. If an error occurs
-// then the returned sip pointer will be nil. This method recovers from panics
-// and is concurrency-safe.
-func decodeSIPData(transp transport, rawData []byte) (msg sipMessage, err error) {
-//    var offset int
-//    if transp == transportTCP {
-//        offset = decodeOffset
-//    }
-
-    // Recover from any panics that occur while parsing a packet.
-    defer func() {
-        if r := recover(); r != nil {
-            err = fmt.Errorf("panic: %v", r)
-        }
-    }()
-
-    cutPosS := []int{}
-    cutPosE := []int{}
-
-    byte_len := len(rawData)
-	start:=-1
-	end:=byte_len
-    for i,ch := range rawData {
-		//冒頭の\r\nを無視
-        if start == -1 {
-            if ch == byte('\n') || ch == byte('\r') {
-                continue
-            }else{
-				cutPosS = append(cutPosS,i)
-				start=i
-			}
-        }
-
-		//CRLFの全部の場所を取得
-        if i+2<byte_len &&
-                rawData[i+0] == byte('\r') && rawData[i+1] == byte('\n'){
-			cutPosE = append(cutPosE,i)
-			cutPosS = append(cutPosS,i+2)
-		}
-		//ヘッダ終了位置の確認
-        if i+4<byte_len &&
-                rawData[i+0] == byte('\r') && rawData[i+1] == byte('\n') &&
-		        rawData[i+2] == byte('\r') && rawData[i+3] == byte('\n'){
-			end=i+4
-			break
-		}
-    }
-
-	// TODO:ヘッダの終了位置がわからなかった時とかの処理
-	// fragmented packetが入ってきた場合はこっちに来るのでその処理を書かないと・・・
-	if start < 0 || byte_len <= end{
-		return msg, nil
-	}
-
-	// 正常系処理
-	// SIP
-	first_lines:=[]string{}
-	headers:=map[string][]string{}
-
-	var lastheader string
-	for i:=0;i<len(cutPosE);i++ {
-		s:=cutPosS[i]
-		e:=cutPosE[i]
-
-		if i==0 { // Requst-line or Status-Lineが入るはず。
-			first_lines=strings.SplitN(string(rawData[s:e])," ",3)
-		}else{
-			// 途中で改行された場合の処理(先頭がスペース、またはタブ)
-			// Call-Id: hogehoge--aaaaiii
-			//  higehige@hogehoge.com
-			// みたいなケース
-			if rawData[s] == byte(' ') || rawData[s] == byte('\t'){
-				if lastheader!=""{
-					lastelement:=headers[lastheader][len(headers[lastheader])-1]
-					// TrimSpaceは" "と"\t"の両方削除してくれる
-					lastelement+=strings.TrimSpace(string(rawData[s:e]))
-				}else{
-					// 当該行を無視する
-				}
-				continue
-			}
-			// 先頭がスペースまたはタブ出ない時はヘッダパラメータのはず
-			header_kv:=strings.SplitN(string(rawData[s:e]),":",2)
-			key:=strings.ToLower(strings.TrimSpace(header_kv[0]))
-			val:=strings.TrimSpace(header_kv[1])
-			_,ok := headers[key]
-			if !ok{
-				headers[key]=[]string{}
-			}
-
-			headers[key]=append(headers[key],val)
-			lastheader=key
-		}
-	}
-
-	// mandatory header fields check
-	to         , existTo          := headers["to"]
-	from       , existFrom        := headers["from"]
-	cseq       , existCSeq        := headers["cseq"]
-	callid     , existCallId      := headers["call-id"]
-	maxfrowards, existMaxForwards := headers["max-forwards"]
-	via        , existVia         := headers["via"]
-
-	// 必須ヘッダ不足
-	if !(existTo && existFrom && existCSeq && existCallId && existMaxForwards && existVia){
-	}
-
-	contenttype, existContentType := headers["content-type"]
-
-	callid:=headers["call-id"][len(headers["call-id"])-1]
-	fmt.Printf("%s\n",first_lines[0])
-	fmt.Printf("%s\n",callid)
-	if existContentType{
-		fmt.Printf("%s\n",contenttype)
-	}
-
-    return msg, nil
+func getLastElementStrArray(array []string) string{
+	return array[len(array)-1]
 }
 
 
@@ -661,6 +549,164 @@ func (sip *sipPlugin) expireTransaction(t *sipTransaction) {
     unmatchedRequests.Add(1)
 }
 
+// decodeSIPData decodes a byte array into a SIP struct. If an error occurs
+// then the returned sip pointer will be nil. This method recovers from panics
+// and is concurrency-safe.
+//func (sip *sipPlugin) decodeSIPData(ts time.Time, tuple common.IPPortTuple, cmdlineTuple *common.CmdlineTuple, transp transport, rawData []byte) (msg *sipMessage, err error) {
+func (sip *sipPlugin) decodeSIPData(transp transport, rawData []byte) (msg *sipMessage, err error) {
+//    var offset int
+//    if transp == transportTCP {
+//        offset = decodeOffset
+//    }
+
+	msg = &sipMessage{}
+
+    // Recover from any panics that occur while parsing a packet.
+    defer func() {
+        if r := recover(); r != nil {
+            err = fmt.Errorf("panic: %v", r)
+        }
+    }()
+
+	// SIPのヘッダとボディの区切りとそれまでのCRLFで改行が入っている箇所を探す
+    cutPosS := []int{} // SIPメッセージの先頭、またはCRLFの直後のバイト位置
+    cutPosE := []int{} // CRLFの直前のバイト位置
+
+    byte_len := len(rawData)
+	hdr_start:=-1      // SIPメッセージの始まり位置を-1で初期化
+	hdr_end:=byte_len// SIPのボディの終了位置(CRLFCRLF)位置を受け取ったbyte arrayの長さで初期化
+	_ = hdr_end
+	bdy_start:=byte_len// SIPのボディの終了位置(CRLFCRLF)位置を受け取ったbyte arrayの長さで初期化
+	bdy_end  :=byte_len
+    for i,ch := range rawData {
+		//冒頭の\r\nを無視していく
+        if hdr_start == -1 {
+            if ch == byte('\n') || ch == byte('\r') {
+                continue
+            }else{
+				cutPosS = append(cutPosS,i)
+				hdr_start=i
+			}
+        }
+
+		//CRLFの全部の場所を取得
+        if i+2<byte_len &&
+                rawData[i+0] == byte('\r') && rawData[i+1] == byte('\n'){
+			cutPosE = append(cutPosE,i)
+			cutPosS = append(cutPosS,i+2)
+		}
+		//ヘッダ終了位置の確認
+        if i+4<byte_len &&
+                rawData[i+0] == byte('\r') && rawData[i+1] == byte('\n') &&
+		        rawData[i+2] == byte('\r') && rawData[i+3] == byte('\n'){
+			hdr_end=i
+			bdy_start=i+4
+			break
+		}
+    }
+
+	// TODO:ヘッダの終了位置がわからなかった時とかの処理
+	// fragmented packetが入ってきた場合はこっちに来るのでその処理を書かないと・・・
+	if hdr_start < 0 || byte_len <= bdy_start{
+		return msg, nil
+	}
+
+	// 正常系処理
+	// SIP
+	first_lines:=[]string{}
+	headers:=map[string][]string{}
+
+	var lastheader string
+	for i:=0;i<len(cutPosE);i++ {
+		s:=cutPosS[i]
+		e:=cutPosE[i]
+
+		if i==0 { // Requst-line or Status-Lineが入るはず。
+			first_lines=strings.SplitN(string(rawData[s:e])," ",3)
+		}else{
+			// 途中で改行された場合の処理(先頭がスペース、またはタブ)
+			// Call-Id: hogehoge--aaaaiii
+			//  higehige@hogehoge.com
+			// みたいなケース
+			if rawData[s] == byte(' ') || rawData[s] == byte('\t'){
+				if lastheader!=""{
+					lastelement:=headers[lastheader][len(headers[lastheader])-1]
+					// TrimSpaceは" "と"\t"の両方削除してくれる
+					lastelement+=strings.TrimSpace(string(rawData[s:e]))
+				}else{
+					// 当該行を無視する
+				}
+				continue
+			}
+			// 先頭がスペースまたはタブ出ない時はヘッダパラメータのはず
+			header_kv:=strings.SplitN(string(rawData[s:e]),":",2)
+			key:=strings.ToLower(strings.TrimSpace(header_kv[0]))
+			val:=strings.TrimSpace(header_kv[1])
+			_,ok := headers[key]
+			if !ok{
+				headers[key]=[]string{}
+			}
+
+			headers[key]=append(headers[key],val)
+			lastheader=key
+		}
+	}
+
+	// mandatory header fields check
+	to         , existTo          := headers["to"]
+	from       , existFrom        := headers["from"]
+	cseq       , existCSeq        := headers["cseq"]
+	callid     , existCallId      := headers["call-id"]
+	maxfrowards, existMaxForwards := headers["max-forwards"]
+	via        , existVia         := headers["via"]
+
+	// TODO: 処理をきちんとかく
+	// 必須ヘッダ不足
+	if !(existTo && existFrom && existCSeq && existCallId && existMaxForwards && existVia){
+	}
+
+	_=to; _=from; _=cseq; _=callid; _=maxfrowards; _=via
+
+	contenttype_array  , existContentType   := headers["content-type"]
+	contentlength_array, existContentLength := headers["content-length"]
+	//callid:=headers["call-id"][len(headers["call-id"])-1]
+
+	fmt.Printf("%s\n",first_lines[0])
+	fmt.Printf("%s\n",callid)
+
+	// TODO: 処理をきちんとかく
+	// ボディがない（または不正な）パターン
+	if !existContentType || !existContentLength{
+		return msg, nil
+	}
+
+	contentlength,err := strconv.ParseInt(getLastElementStrArray(contentlength_array),10,64)
+//	contentlength := getLastElementStrArray(contentlength_array)
+
+	// bodyの種類により動作を変更する
+	switch(getLastElementStrArray(contenttype_array)){
+		case "application/sdp":
+			fmt.Printf("body is sdp. %d\n",contentlength)
+			//fmt.Printf("%s\n",string(rawData[end:byte_len]))
+			bdy_end=bdy_start+int(contentlength)
+			if byte_len < bdy_end {
+				// TODO:
+				// fragmented packetの場合、未受信部分があるのでバッファリングの処理に入る・・・かな？
+				// とりあえず現状は取れる分だけとっとく。
+				bdy_end=byte_len
+			}
+			fmt.Printf("%s\n",string(rawData[bdy_start:bdy_end]))
+
+		default:
+			fmt.Printf("unspported content-type.\n")
+
+	}
+
+	// TODO: 処理をきちんとかく
+    return msg, nil
+}
+
+
 // udpパケットで呼ばれた際のパース
 func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
     defer logp.Recover("Sip ParseUdp")
@@ -670,7 +716,9 @@ func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
         pkt.Tuple.String(), packetSize)
 
     //sipPkt, err := decodeSIPData(transportUDP, pkt.Payload)
-    decodeSIPData(transportUDP, pkt.Payload)
+	sipMsg, err:= sip.decodeSIPData(transportUDP, pkt.Payload)
+	_ = sipMsg
+	_ = err
 
 //    sipPkt, err := decodeSIPData(transportUDP, pkt.Payload)
 //    if err != nil {

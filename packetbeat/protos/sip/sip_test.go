@@ -28,20 +28,10 @@ const (
 
 // DnsTestMessage holds the data that is expected to be returned when parsing
 // the raw DNS layer payloads for the request and response packet.
-type dnsTestMessage struct {
-    id          uint16
-    opcode      string
-    flags       []string
-    rcode       string
-    qClass      string
-    qType       string
-    qName       string
-    qEtld       string
-    answers     []string
-    authorities []string
-    additionals []string
-    request     []byte
-    response    []byte
+type sipTestMessage struct {
+    // request     []byte
+    // response    []byte
+    messages    [][]byte
 }
 
 // Request and response addresses.
@@ -56,85 +46,158 @@ var (
 
 var (
     // An array of all test messages.
-    messages = []dnsTestMessage{
-        elasticA,
+    messages = []sipTestMessage{
+        test1,
+        test2,
+        test3,
     }
 
-    elasticA = dnsTestMessage{
+    test1 = sipTestMessage{
+        messages: [][]byte{
+                     []byte(  "INVITE sip:0312345678@192.168.0.1;user=phone SIP/2.0\r\n"   +
+                              "Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK81075720\r\n"  +
+                              "From: <sip:sipurl@192.168.0.1>;tag=269050131\r\n"           +
+                              "To: <sip:0312341234@192.168.0.1;user=phone>\r\n"            +
+                              "Contact: <sip:301234123@10.0.0.1;user=phone>\r\n"           +
+                              "Call-ID: hogehoge@192.168.0.1\r\n"                          +
+                              "CSeq: 1 INVITE\r\n"                                         +
+                              "Max-Forwards: 70\r\n"                                       +
+                              "Allow: INVITE, ACK, CANCEL, BYE, UPDATE, PRACK\r\n"         +
+                              "Supported: 100rel,timer\r\n"                                +
+                              "Session-Expires: 300\r\n"                                   +
+                              "Privacy: none\r\n"                                          +
+                              "P-Preferred-Identity: <tel:0387654321>\r\n"                 +
+                              "Content-Type: application/sdp\r\n"                          +
+                              "Content-Length: 107\r\n"                                    +
+                              "\r\n"                                                       +
+                              "v=0\r\n"                                                    +
+                              "o=- 0 0 IN IP4 10.0.0.1\r\n"                                +
+                              "s=-\r\n"                                                    +
+                              "c=IN IP4 10.0.0.1\r\n"                                      +
+                              "t=0 0\r\n"                                                  +
+                              "m=audio 5012 RTP/AVP 0\r\n"                                 +
+                              "a=rtpmap:0 PCMU/8000\r\n"),
 
-        id:      8529,
-        opcode:  "QUERY",
-        flags:   []string{"rd", "ra"},
-        rcode:   "NOERROR",
-        qClass:  "IN",
-        qType:   "A",
-        qName:   "elastic.co.",
-        qEtld:   "elastic.co.",
-        answers: []string{"54.148.130.30", "54.69.104.66"},
-        request: []byte{
-            0x49, 0x4e, 0x56, 0x49, 0x54, 0x45, 0x20, 0x73, 0x69, 0x70, 0x3a, 0x36, 0x35, 0x30, 0x35, 0x35,
-            0x35, 0x30, 0x32, 0x35, 0x32, 0x40, 0x65, 0x78, 0x61, 0x6d, 0x70, 0x6c, 0x65, 0x2e, 0x63, 0x6f,
-            0x6d, 0x3a, 0x35, 0x30, 0x36, 0x30, 0x20, 0x53, 0x49, 0x50, 0x2f, 0x32, 0x2e, 0x30, 0x0d, 0x0a,
-            0x56, 0x69, 0x61, 0x3a, 0x20, 0x53, 0x49, 0x50, 0x2f, 0x32, 0x2e, 0x30, 0x2f, 0x55, 0x44, 0x50,
-            0x20, 0x31, 0x39, 0x32, 0x2e, 0x31, 0x36, 0x38, 0x2e, 0x31, 0x32, 0x32, 0x2e, 0x32, 0x35, 0x32,
-            0x3a, 0x35, 0x30, 0x36, 0x30, 0x3b, 0x62, 0x72, 0x61, 0x6e, 0x63, 0x68, 0x3d, 0x7a, 0x39, 0x68,
-            0x47, 0x34, 0x62, 0x4b, 0x2d, 0x32, 0x33, 0x36, 0x33, 0x2d, 0x31, 0x2d, 0x30, 0x0d, 0x0a, 0x46,
-            0x72, 0x6f, 0x6d, 0x3a, 0x20, 0x73, 0x69, 0x70, 0x70, 0x20, 0x3c, 0x73, 0x69, 0x70, 0x3a, 0x73,
-            0x69, 0x70, 0x70, 0x40, 0x31, 0x39, 0x32, 0x2e, 0x31, 0x36, 0x38, 0x2e, 0x31, 0x32, 0x32, 0x2e,
-            0x32, 0x35, 0x32, 0x3a, 0x35, 0x30, 0x36, 0x30, 0x3e, 0x3b, 0x74, 0x61, 0x67, 0x3d, 0x32, 0x33,
-            0x36, 0x33, 0x53, 0x49, 0x50, 0x70, 0x54, 0x61, 0x67, 0x30, 0x30, 0x31, 0x0d, 0x0a, 0x54, 0x6f,
-            0x3a, 0x20, 0x73, 0x75, 0x74, 0x20, 0x3c, 0x73, 0x69, 0x70, 0x3a, 0x36, 0x35, 0x30, 0x35, 0x35,
-            0x35, 0x30, 0x32, 0x35, 0x32, 0x40, 0x31, 0x39, 0x32, 0x2e, 0x31, 0x36, 0x38, 0x2e, 0x31, 0x32,
-            0x32, 0x2e, 0x35, 0x39, 0x3a, 0x35, 0x30, 0x36, 0x30, 0x3e, 0x0d, 0x0a, 0x43, 0x61, 0x6c, 0x6c,
-            0x2d, 0x49, 0x44, 0x3a, 0x20, 0x31, 0x2d, 0x32, 0x33, 0x36, 0x33, 0x40, 0x31, 0x39, 0x32, 0x2e,
-            0x31, 0x36, 0x38, 0x2e, 0x31, 0x32, 0x32, 0x2e, 0x32, 0x35, 0x32, 0x0d, 0x0a, 0x43, 0x53, 0x65,
-            0x71, 0x3a, 0x20, 0x31, 0x20, 0x49, 0x4e, 0x56, 0x49, 0x54, 0x45, 0x0d, 0x0a, 0x43, 0x6f, 0x6e,
-            0x74, 0x61, 0x63, 0x74, 0x3a, 0x20, 0x73, 0x69, 0x70, 0x3a, 0x73, 0x69, 0x70, 0x70, 0x40, 0x31,
-            0x39, 0x32, 0x2e, 0x31, 0x36, 0x38, 0x2e, 0x31, 0x32, 0x32, 0x2e, 0x32, 0x35, 0x32, 0x3a, 0x35,
-            0x30, 0x36, 0x30, 0x0d, 0x0a, 0x4d, 0x61, 0x78, 0x2d, 0x46, 0x6f, 0x72, 0x77, 0x61, 0x72, 0x64,
-            0x73, 0x3a, 0x20, 0x37, 0x30, 0x0d, 0x0a, 0x53, 0x75, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x3a, 0x20,
-            0x50, 0x65, 0x72, 0x66, 0x6f, 0x72, 0x6d, 0x61, 0x6e, 0x63, 0x65, 0x20, 0x54, 0x65, 0x73, 0x74,
-            0x0d, 0x0a, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x2d, 0x54, 0x79, 0x70, 0x65, 0x3a, 0x20,
-            0x61, 0x70, 0x70, 0x6c, 0x69, 0x63, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x2f, 0x73, 0x64, 0x70, 0x0d,
-            0x0a, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x2d, 0x4c, 0x65, 0x6e, 0x67, 0x74, 0x68, 0x3a,
-            0x20, 0x20, 0x20, 0x31, 0x34, 0x31, 0x0d, 0x0a, 0x0d, 0x0a, 0x76, 0x3d, 0x30, 0x0d, 0x0a, 0x6f,
-            0x3d, 0x75, 0x73, 0x65, 0x72, 0x31, 0x20, 0x35, 0x33, 0x36, 0x35, 0x35, 0x37, 0x36, 0x35, 0x20,
-            0x32, 0x33, 0x35, 0x33, 0x36, 0x38, 0x37, 0x36, 0x33, 0x37, 0x20, 0x49, 0x4e, 0x20, 0x49, 0x50,
-            0x34, 0x20, 0x31, 0x39, 0x32, 0x2e, 0x31, 0x36, 0x38, 0x2e, 0x31, 0x32, 0x32, 0x2e, 0x32, 0x35,
-            0x32, 0x0d, 0x0a, 0x73, 0x3d, 0x2d, 0x0d, 0x0a, 0x63, 0x3d, 0x49, 0x4e, 0x20, 0x49, 0x50, 0x34,
-            0x20, 0x31, 0x39, 0x32, 0x2e, 0x31, 0x36, 0x38, 0x2e, 0x31, 0x32, 0x32, 0x2e, 0x32, 0x35, 0x32,
-            0x0d, 0x0a, 0x74, 0x3d, 0x30, 0x20, 0x30, 0x0d, 0x0a, 0x6d, 0x3d, 0x61, 0x75, 0x64, 0x69, 0x6f,
-            0x20, 0x36, 0x30, 0x30, 0x30, 0x20, 0x52, 0x54, 0x50, 0x2f, 0x41, 0x56, 0x50, 0x20, 0x30, 0x0d,
-            0x0a, 0x61, 0x3d, 0x72, 0x74, 0x70, 0x6d, 0x61, 0x70, 0x3a, 0x30, 0x20, 0x50, 0x43, 0x4d, 0x55,
-            0x2f, 0x38, 0x30, 0x30, 0x30, 0x0d, 0x0a,
+                      []byte( "SIP/2.0 407 Proxy Authentication Required\r\n"              +
+                              "Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK3408987398\r\n"+
+                              "From: <sip:hogehoge@10.0.0.1>;tag=5408647717\r\n"           +
+                              "To: <sip:0312345678@192.168.0.1>;tag=3713480994\r\n"        +
+                              "Call-ID: hogehoge@192.168.0.1\r\n"                         +
+                              "CSeq: 1 INVITE\r\n"                                         +
+                              "Content-Length: 0\r\n"                                      +
+                              "Date: Mon, 04 Sep 2017 02:29:54 GMT\r\n"                    +
+                              "Proxy-Authenticate: Digest realm=\"example.com\","          + // 改行していない
+                              " domain=\"sip:192.168.0.1\", nonce=\"15044921123142536\","  + // 改行していない
+                              " opaque=\"\", stale=FALSE, algorithm=MD5\r\n"               +
+                              "\r\n"),
+
+                     []byte(  "ACK sip:0312345678@192.168.0.1:5060 SIP/2.0\r\n"               +
+                              "Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK3408987398\r\n"   +
+                              "From: <sip:hogehoge@example.com>;tag=5408647717\r\n"           +
+                              "To: <sip:0312345678@192.168.0.1>;tag=3713480994\r\n"           +
+                              "Call-ID: hogehoge@10.0.0.1\r\n"                                +
+                              "CSeq: 1 ACK\r\n"                                               +
+                              "Content-Length: 0\r\n"                                         +
+                              "Max-Forwards: 70\r\n"                                          +
+                              "\r\n"),
+
+                     []byte(  "INVITE sip:0312345678@192.168.0.1:5060 SIP/2.0\r\n"                        +
+                              "Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK1701109339\r\n"               +
+                              "From: <sip:hogehoge@example.cm>;tag=1451088881\r\n"                        +
+                              "To: <sip:0312345678@192.168.0.1>\r\n"                                      +
+                              "Call-ID: hogehoge@10.0.0.1\r\n"                                            +
+                              "CSeq: 2 INVITE\r\n"                                                        +
+                              "Contact: <sip:1833176976@10.0.0.1:5060;transport=udp>\r\n"                 +
+                              "Supported: 100rel, timer\r\n"                                              +
+                              "Allow: INVITE, ACK, CANCEL, BYE, UPDATE, PRACK\r\n"                        +
+                              "Content-Length: 134\r\n"                                                   +
+                              "Session-Expires: 180\r\n"                                                  +
+                              "Max-Forwards: 70\r\n"                                                      +
+                              "Content-Type: application/sdp\r\n"                                         +
+                              "Privacy: none\r\n"                                                         +
+                              "P-Preferred-Identity: <sip:nod2324030@example.com>\r\n"                    +
+                              "User-Agent: Some User-Agent\r\n"                                           +
+                              "Proxy-Authorization: Digest username=\"hogehoge\", realm=\"example.com\"," + // 改行していない
+                              " nonce=\"15044921123142536\", uri=\"sip:0312345678@192.168.0.1:5060\","    + // 改行していない
+                              " response=\"358a640a266ad4eb3ed82f0746c82dfd\"\r\n"                        +
+                              "\r\n"                                                                      +
+                              "v=0\r\n"                                                                   +
+                              "o=- 0 0 IN IP4 10.0.0.1\r\n"                                               +
+                              "s=-\r\n"                                                                   +
+                              "c=IN IP4 10.0.0.1\r\n"                                                     +
+                              "t=0 0\r\n"                                                                 +
+                              "m=audio 10000 RTP/AVP 0 18\r\n"                                            +
+                              "a=rtpmap:0 PCMU/8000\r\n"                                                  +
+                              "a=rtpmap:18 G729/8000\r\n"),
+                  },
+    }
+    test2 = sipTestMessage{ // Fragmented Packet, fragmented at header
+        messages: [][]byte{
+                     []byte(  "INVITE sip:0312345678@192.168.0.1:5060 SIP/2.0\r\n"                        +
+                              "Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK1701109339\r\n"               +
+                              "From: <sip:hogehoge@example.cm>;tag=1451088881\r\n"                        +
+                              "To: <sip:0312345678@192.168.0.1>\r\n"                                      +
+                              "Call-ID: hogehoge@10.0.0.1\r\n"                                            +
+                              "CSeq: 2 INVITE\r\n"                                                        +
+                              "Contact: <sip:1833176976@10.0.0.1:5060;transport=udp>\r\n"                 +
+                              "Supported: 100rel, timer\r\n"                                              +
+                              "Allow: INVITE, ACK, CANCEL, BYE, UPDATE, PRACK\r\n"                        +
+                              "Content-Length: 134\r\n"                                                   +
+                              "Session-Expires: 180\r\n"                                                  +
+                              "Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK1701109339\r\n"               +
+                              "Max-Forwards: 70\r\n"                                                      +
+                              "Content-Type: application/sdp\r\n"                                         +
+                              "Privacy: none\r\n"                                                         +
+                              "P-Preferred-Identity: <sip:nod2324030@example.com>\r\n"                    +
+                              "User-Agent: Some User-Agent\r\n"                                           +
+                              "Proxy-Authorization: Digest username=\"hogehoge\", realm=\"example.com\"," + // 改行していない
+                              " nonce=\"15044921123142536\", uri=\"sip:0312345678@192.168.0.1:5060\","    + // 改行していない
+                              " response=\"358a640a266ad4eb3ed82f0746c82dfd\"\r\n"                        +
+                              "\r\n"                                                                      +
+                              "v=0\r\n" ),
+
+                      []byte( "o=- 0 0 IN IP4 10.0.0.1\r\n"                                               +
+                              "s=-\r\n"                                                                   +
+                              "c=IN IP4 10.0.0.1\r\n"                                                     +
+                              "t=0 0\r\n"                                                                 +
+                              "m=audio 10000 RTP/AVP 0 18\r\n"                                            +
+                              "a=rtpmap:0 PCMU/8000\r\n"                                                  +
+                              "a=rtpmap:18 G729/8000\r\n"),
         },
-        response: []byte{
-            0x53, 0x49, 0x50, 0x2f, 0x32, 0x2e, 0x30, 0x20, 0x31, 0x30, 0x30, 0x20, 0x54, 0x72, 0x79, 0x69,
-            0x6e, 0x67, 0x0d, 0x0a, 0x56, 0x69, 0x61, 0x3a, 0x20, 0x53, 0x49, 0x50, 0x2f, 0x32, 0x2e, 0x30,
-            0x2f, 0x55, 0x44, 0x50, 0x20, 0x31, 0x39, 0x32, 0x2e, 0x31, 0x36, 0x38, 0x2e, 0x31, 0x32, 0x32,
-            0x2e, 0x32, 0x35, 0x32, 0x3a, 0x35, 0x30, 0x36, 0x30, 0x3b, 0x72, 0x65, 0x63, 0x65, 0x69, 0x76,
-            0x65, 0x64, 0x3d, 0x31, 0x39, 0x32, 0x2e, 0x31, 0x36, 0x38, 0x2e, 0x31, 0x32, 0x32, 0x2e, 0x32,
-            0x35, 0x32, 0x3b, 0x62, 0x72, 0x61, 0x6e, 0x63, 0x68, 0x3d, 0x7a, 0x39, 0x68, 0x47, 0x34, 0x62,
-            0x4b, 0x2d, 0x32, 0x33, 0x36, 0x33, 0x2d, 0x31, 0x2d, 0x30, 0x0d, 0x0a, 0x52, 0x65, 0x63, 0x6f,
-            0x72, 0x64, 0x2d, 0x52, 0x6f, 0x75, 0x74, 0x65, 0x3a, 0x20, 0x3c, 0x73, 0x69, 0x70, 0x3a, 0x31,
-            0x39, 0x32, 0x2e, 0x31, 0x36, 0x38, 0x2e, 0x31, 0x32, 0x32, 0x2e, 0x35, 0x39, 0x3a, 0x35, 0x30,
-            0x35, 0x38, 0x3b, 0x74, 0x72, 0x61, 0x6e, 0x73, 0x70, 0x6f, 0x72, 0x74, 0x3d, 0x54, 0x43, 0x50,
-            0x3b, 0x6c, 0x72, 0x3e, 0x0d, 0x0a, 0x52, 0x65, 0x63, 0x6f, 0x72, 0x64, 0x2d, 0x52, 0x6f, 0x75,
-            0x74, 0x65, 0x3a, 0x20, 0x3c, 0x73, 0x69, 0x70, 0x3a, 0x41, 0x63, 0x51, 0x42, 0x65, 0x79, 0x4d,
-            0x7a, 0x4e, 0x43, 0x40, 0x63, 0x77, 0x2d, 0x61, 0x69, 0x6f, 0x3a, 0x35, 0x30, 0x36, 0x30, 0x3b,
-            0x74, 0x72, 0x61, 0x6e, 0x73, 0x70, 0x6f, 0x72, 0x74, 0x3d, 0x55, 0x44, 0x50, 0x3b, 0x6c, 0x72,
-            0x3e, 0x0d, 0x0a, 0x43, 0x61, 0x6c, 0x6c, 0x2d, 0x49, 0x44, 0x3a, 0x20, 0x31, 0x2d, 0x32, 0x33,
-            0x36, 0x33, 0x40, 0x31, 0x39, 0x32, 0x2e, 0x31, 0x36, 0x38, 0x2e, 0x31, 0x32, 0x32, 0x2e, 0x32,
-            0x35, 0x32, 0x0d, 0x0a, 0x46, 0x72, 0x6f, 0x6d, 0x3a, 0x20, 0x22, 0x73, 0x69, 0x70, 0x70, 0x22,
-            0x20, 0x3c, 0x73, 0x69, 0x70, 0x3a, 0x73, 0x69, 0x70, 0x70, 0x40, 0x31, 0x39, 0x32, 0x2e, 0x31,
-            0x36, 0x38, 0x2e, 0x31, 0x32, 0x32, 0x2e, 0x32, 0x35, 0x32, 0x3e, 0x3b, 0x74, 0x61, 0x67, 0x3d,
-            0x32, 0x33, 0x36, 0x33, 0x53, 0x49, 0x50, 0x70, 0x54, 0x61, 0x67, 0x30, 0x30, 0x31, 0x0d, 0x0a,
-            0x54, 0x6f, 0x3a, 0x20, 0x22, 0x73, 0x75, 0x74, 0x22, 0x20, 0x3c, 0x73, 0x69, 0x70, 0x3a, 0x36,
-            0x35, 0x30, 0x35, 0x35, 0x35, 0x30, 0x32, 0x35, 0x32, 0x40, 0x31, 0x39, 0x32, 0x2e, 0x31, 0x36,
-            0x38, 0x2e, 0x31, 0x32, 0x32, 0x2e, 0x35, 0x39, 0x3e, 0x0d, 0x0a, 0x43, 0x53, 0x65, 0x71, 0x3a,
-            0x20, 0x31, 0x20, 0x49, 0x4e, 0x56, 0x49, 0x54, 0x45, 0x0d, 0x0a, 0x43, 0x6f, 0x6e, 0x74, 0x65,
-            0x6e, 0x74, 0x2d, 0x4c, 0x65, 0x6e, 0x67, 0x74, 0x68, 0x3a, 0x20, 0x20, 0x30, 0x0d, 0x0a, 0x0d,
-            0x0a,
+    }
+
+    test3 = sipTestMessage{ // Fragmented Packet, fragmented at body
+        messages: [][]byte{
+                     []byte(  "INVITE sip:0312345678@192.168.0.1:5060 SIP/2.0\r\n"                        +
+                              "Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK1701109339\r\n"               +
+                              "From: <sip:hogehoge@example.cm>;tag=1451088881\r\n"                        +
+                              "To: <sip:0312345678@192.168.0.1>\r\n"                                      +
+                              "Call-ID: hogehoge@10.0.0.1\r\n"                                            +
+                              "CSeq: 2 INVITE\r\n"                                                        +
+                              "Contact: <sip:1833176976@10.0.0.1:5060;transport=udp>\r\n"                 +
+                              "Supported: 100rel, timer\r\n"                                              +
+                              "Allow: INVITE, ACK, CANCEL, BYE, UPDATE, PRACK\r\n"                        +
+                              "Content-Length: 134\r\n"                                                   +
+                              "Session-Expires: 180\r\n"),
+
+                     []byte(  "Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK1701109339\r\n"               +
+                              "Max-Forwards: 70\r\n"                                                      +
+                              "Content-Type: application/sdp\r\n"                                         +
+                              "Privacy: none\r\n"                                                         +
+                              "P-Preferred-Identity: <sip:nod2324030@example.com>\r\n"                    +
+                              "User-Agent: Some User-Agent\r\n"                                           +
+                              "Proxy-Authorization: Digest username=\"hogehoge\", realm=\"example.com\"," + // 改行していない
+                              " nonce=\"15044921123142536\", uri=\"sip:0312345678@192.168.0.1:5060\","    + // 改行していない
+                              " response=\"358a640a266ad4eb3ed82f0746c82dfd\"\r\n"                        +
+                              "\r\n"                                                                      +
+                              "v=0\r\n"                                                                   +
+                              "o=- 0 0 IN IP4 10.0.0.1\r\n"                                               +
+                              "s=-\r\n"                                                                   +
+                              "c=IN IP4 10.0.0.1\r\n"                                                     +
+                              "t=0 0\r\n"                                                                 +
+                              "m=audio 10000 RTP/AVP 0 18\r\n"                                            +
+                              "a=rtpmap:0 PCMU/8000\r\n"                                                  +
+                              "a=rtpmap:18 G729/8000\r\n"),
         },
     }
 )
@@ -214,7 +277,34 @@ func TestParseUdp_malformedPacket(t *testing.T) {
 func TestParseUdp_requestPacket(t *testing.T) {
     store := &eventStore{}
     sip := newSIP(store, testing.Verbose())
-    packet := newPacket(forward, elasticA.request)
+    packet := newPacket(forward, test1.messages[0])
+    sip.ParseUDP(packet)
+    assert.Equal(t, 1, sip.transactions.Size(), "There should be one transaction.")
+    assert.True(t, store.empty(), "No result should have been published.")
+}
+
+func TestParseUdp_responsePacket(t *testing.T) {
+    store := &eventStore{}
+    sip := newSIP(store, testing.Verbose())
+    packet := newPacket(reverse, test1.messages[1])
+    sip.ParseUDP(packet)
+    assert.Equal(t, 1, sip.transactions.Size(), "There should be one transaction.")
+    assert.True(t, store.empty(), "No result should have been published.")
+}
+
+func TestParseUdp_requestPacket2(t *testing.T) {
+    store := &eventStore{}
+    sip := newSIP(store, testing.Verbose())
+    packet := newPacket(reverse, test1.messages[2])
+    sip.ParseUDP(packet)
+    assert.Equal(t, 1, sip.transactions.Size(), "There should be one transaction.")
+    assert.True(t, store.empty(), "No result should have been published.")
+}
+
+func TestParseUdp_responsePacket2(t *testing.T) {
+    store := &eventStore{}
+    sip := newSIP(store, testing.Verbose())
+    packet := newPacket(reverse, test1.messages[3])
     sip.ParseUDP(packet)
     assert.Equal(t, 1, sip.transactions.Size(), "There should be one transaction.")
     assert.True(t, store.empty(), "No result should have been published.")

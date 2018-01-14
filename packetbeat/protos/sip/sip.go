@@ -97,6 +97,7 @@ type sipMessage struct {
     // SIP FirstLines
     isRequest    bool
     method       common.NetString
+	requestUri   common.NetString
     statusCode   uint16
     statusPhrase common.NetString
 
@@ -671,7 +672,23 @@ func (sip *sipPlugin) decodeSIPData(transp transport, rawData []byte) (msg *sipM
 	contentlength_array, existContentLength := headers["content-length"]
 	//callid:=headers["call-id"][len(headers["call-id"])-1]
 
-	fmt.Printf("%s\n",first_lines[0])
+	msg.isRequest = strings.Contains(first_lines[2],"SIP/2.0")
+	if msg.isRequest {
+		msg.method    =common.NetString(first_lines[0])
+		msg.requestUri=common.NetString(first_lines[1])
+		fmt.Printf("%s\n","this message is request")
+		fmt.Printf("Method      : %s\n",msg.method)
+		fmt.Printf("Request-URI : %s\n",msg.requestUri)
+	}else{
+		parsedStatusCode,err := strconv.ParseInt(first_lines[1],10,16)
+		// TODO:パース失敗時のエラーハンドリングを追加
+		msg.statusCode  =uint16(parsedStatusCode)
+		msg.statusPhrase=common.NetString(first_lines[2])
+		fmt.Printf("%s\n","this message is response")
+		fmt.Printf("Status-Code  : %d\n",msg.statusCode)
+		fmt.Printf("Status-Phase : %s\n",msg.statusPhrase)
+	}
+
 	fmt.Printf("%s\n",callid)
 
 	// TODO: 処理をきちんとかく
@@ -681,7 +698,7 @@ func (sip *sipPlugin) decodeSIPData(transp transport, rawData []byte) (msg *sipM
 	}
 
 	contentlength,err := strconv.ParseInt(getLastElementStrArray(contentlength_array),10,64)
-//	contentlength := getLastElementStrArray(contentlength_array)
+	// TODO:パース失敗時のエラーハンドリングを追加
 
 	// bodyの種類により動作を変更する
 	switch(getLastElementStrArray(contenttype_array)){

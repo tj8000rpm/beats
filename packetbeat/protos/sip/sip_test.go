@@ -6,6 +6,7 @@ import (
     "net"
     "testing"
     "time"
+//    "fmt"
 
     "github.com/stretchr/testify/assert"
 
@@ -228,7 +229,7 @@ func newSIP(store *eventStore, verbose bool) *sipPlugin {
 
     cfg, _ := common.NewConfigFrom(map[string]interface{}{
         "ports":               []int{serverPort},
-        "buffer_timeout":      5 * time.Second,
+        "buffer_timeout":      2 * time.Second,
     })
     sip, err := New(false, callback, cfg)
     if err != nil {
@@ -246,72 +247,178 @@ func newPacket(t common.IPPortTuple, payload []byte) *protos.Packet {
     }
 }
 
-// Verify that an empty packet is safely handled (no panics).
-func TestParseUdp_emptyPacket(t *testing.T) {
-    store := &eventStore{}
-    sip := newSIP(store, testing.Verbose())
-    packet := newPacket(forward, []byte{})
-    sip.ParseUDP(packet)
-    assert.Empty(t, sip.fragmentBuffer.Size(), "There should be no transactions.")
-    assert.True(t, store.empty(), "No result should have been published.")
-}
+// // Verify that an empty packet is safely handled (no panics).
+// func TestParseUdp_emptyPacket(t *testing.T) {
+//     store := &eventStore{}
+//     sip := newSIP(store, testing.Verbose())
+//     packet := newPacket(forward, []byte{})
+//     sip.ParseUDP(packet)
+//     assert.Empty(t, sip.fragmentBuffer.Size(), "There should be no transactions.")
+//     assert.True(t, store.empty(), "No result should have been published.")
+// }
+
 
 // Verify that a malformed packet is safely handled (no panics).
-func TestParseUdp_malformedPacket(t *testing.T) {
-    sip := newSIP(nil, testing.Verbose())
+func TestParseUdp_malformedPacketAfterTimeoute(t *testing.T) {
+    store := &eventStore{}
+    sip := newSIP(store, testing.Verbose())
     garbage := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}
     packet := newPacket(forward, garbage)
     sip.ParseUDP(packet)
+
+    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
+    time.Sleep((3) * time.Second) 
     assert.Empty(t, sip.fragmentBuffer.Size(), "There should be no transactions.")
-
-    // As a future addition, a malformed message should publish a result.
 }
 
-// Verify that the lone request packet is parsed.
-func TestParseUdp_requestPacket(t *testing.T) {
+func TestParseUdp_malformedPacketBeforeTimeout(t *testing.T) {
     store := &eventStore{}
     sip := newSIP(store, testing.Verbose())
-    packet := newPacket(forward, test1.messages[0])
+    garbage := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}
+    packet := newPacket(forward, garbage)
     sip.ParseUDP(packet)
+
     assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
-    assert.True(t, store.empty(), "No result should have been published.")
+    time.Sleep((1) * time.Second) 
+    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
 }
 
-func TestParseUdp_responsePacket(t *testing.T) {
+func TestParseUdp_PacketFragmentedInBody(t *testing.T) {
     store := &eventStore{}
     sip := newSIP(store, testing.Verbose())
-    packet := newPacket(reverse, test1.messages[1])
-    sip.ParseUDP(packet)
-    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
-    assert.True(t, store.empty(), "No result should have been published.")
-}
+    garbage1 := []byte(  "INVITE sip:0312345678@192.168.0.1:5060 SIP/2.0\r\n"                        +
+                         "Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK1701109339\r\n"               +
+                         "From: <sip:hogehoge@example.cm>;tag=1451088881\r\n"                        +
+                         "To: <sip:0312345678@192.168.0.1>\r\n"                                      +
+                         "Call-ID: hogehoge@10.0.0.1\r\n"                                            +
+                         "CSeq: 2 INVITE\r\n"                                                        +
+                         "Contact: <sip:1833176976@10.0.0.1:5060;transport=udp>\r\n"                 +
+                         "Supported: 100rel, timer\r\n"                                              +
+                         "Allow: INVITE, ACK, CANCEL, BYE, UPDATE, PRACK\r\n"                        +
+                         "Content-Length: 134\r\n"                                                   +
+                         "Session-Expires: 180\r\n"                                                  +
+                         "Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK1701109339\r\n"               +
+                         "Max-Forwards: 70\r\n"                                                      +
+                         "Content-Type: application/sdp\r\n"                                         +
+                         "Privacy: none\r\n"                                                         +
+                         "P-Preferred-Identity: <sip:hogehoge@example.com>\r\n"                      +
+                         "User-Agent: Some User-Agent\r\n"                                           +
+                         "Proxy-Authorization: Digest username=\"hogehoge\", realm=\"example.com\"," + // 改行していない
+                         " nonce=\"15044921123142536\", uri=\"sip:0312345678@192.168.0.1:5060\","    + // 改行していない
+                         " response=\"358a640a266ad4eb3ed82f0746c82dfd\"\r\n"                        +
+                         "\r\n"                                                                      +
+                         "v=0\r\n" )
 
-func TestParseUdp_requestPacket2(t *testing.T) {
-    store := &eventStore{}
-    sip := newSIP(store, testing.Verbose())
-    packet := newPacket(reverse, test1.messages[2])
-    sip.ParseUDP(packet)
-    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
-    assert.True(t, store.empty(), "No result should have been published.")
-}
+    garbage2  := []byte( "o=- 0 0 IN IP4 10.0.0.1\r\n"                                               +
+                         "s=-\r\n"                                                                   +
+                         "c=IN IP4 10.0.0.1\r\n"                                                     +
+                         "t=0 0\r\n"                                                                 +
+                         "m=audio 10000 RTP/AVP 0 18\r\n"                                            +
+                         "a=rtpmap:0 PCMU/8000\r\n"                                                  +
+                         "a=rtpmap:18 G729/8000\r\n")
 
-func TestParseUdp_responsePacket2(t *testing.T) {
-    store := &eventStore{}
-    sip := newSIP(store, testing.Verbose())
-    packet := newPacket(reverse, test1.messages[3])
-    sip.ParseUDP(packet)
-    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
-    assert.True(t, store.empty(), "No result should have been published.")
-}
-
-
-func TestParseUdp_responseFragmentedPacket2(t *testing.T) {
-    store := &eventStore{}
-    sip := newSIP(store, testing.Verbose())
-    packet1 := newPacket(reverse, test2.messages[0])
-    packet2 := newPacket(reverse, test2.messages[1])
+    packet1 := newPacket(forward, garbage1)
     sip.ParseUDP(packet1)
+    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
+    time.Sleep(500 * time.Millisecond)
+    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
+    packet2 := newPacket(forward, garbage2)
     sip.ParseUDP(packet2)
+    assert.Equal(t, 0, sip.fragmentBuffer.Size(), "There should be one transaction.")
 }
+
+func TestParseUdp_PacketFragmentedInHeader(t *testing.T) {
+    store := &eventStore{}
+    sip := newSIP(store, testing.Verbose())
+
+    garbage1 := []byte(  "INVITE sip:0312345678@192.168.0.1:5060 SIP/2.0\r\n"                        +
+                         "Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK1701109339\r\n"               +
+                         "From: <sip:hogehoge@example.cm>;tag=1451088881\r\n"                        +
+                         "To: <sip:0312345678@192.168.0.1>\r\n"                                      +
+                         "Call-ID: hogehoge@10.0.0.1\r\n"                                            +
+                         "CSeq: 2 INVITE\r\n"                                                        +
+                         "Contact: <sip:1833176976@10.0.0.1:5060;transport=udp>\r\n"                 +
+                         "Supported: 100rel, timer\r\n"                                              +
+                         "Allow: INVITE, ACK, CANCEL, BYE, UPDATE, PRACK\r\n"                        +
+                         "Content-Length: 134\r\n"                                                   +
+                         "Session-Expires: 180\r\n")
+
+    garbage2 := []byte(  "Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK1701109339\r\n"               +
+                         "Max-Forwards: 70\r\n"                                                      +
+                         "Content-Type: application/sdp\r\n"                                         +
+                         "Privacy: none\r\n"                                                         +
+                         "P-Preferred-Identity: <sip:hogehoge@example.com>\r\n"                      +
+                         "User-Agent: Some User-Agent\r\n"                                           +
+                         "Proxy-Authorization: Digest username=\"hogehoge\", realm=\"example.com\"," + // 改行していない
+                         " nonce=\"15044921123142536\", uri=\"sip:0312345678@192.168.0.1:5060\","    + // 改行していない
+                         " response=\"358a640a266ad4eb3ed82f0746c82dfd\"\r\n"                        +
+                         "\r\n"                                                                      +
+                         "v=0\r\n"                                                                   +
+                         "o=- 0 0 IN IP4 10.0.0.1\r\n"                                               +
+                         "s=-\r\n"                                                                   +
+                         "c=IN IP4 10.0.0.1\r\n"                                                     +
+                         "t=0 0\r\n"                                                                 +
+                         "m=audio 10000 RTP/AVP 0 18\r\n"                                            +
+                         "a=rtpmap:0 PCMU/8000\r\n"                                                  +
+                         "a=rtpmap:18 G729/8000\r\n")
+
+    packet1 := newPacket(forward, garbage1)
+    sip.ParseUDP(packet1)
+    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
+    time.Sleep(500 * time.Millisecond)
+    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
+    packet2 := newPacket(forward, garbage2)
+    sip.ParseUDP(packet2)
+    assert.Equal(t, 0, sip.fragmentBuffer.Size(), "There should be one transaction.")
+
+    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
+}
+
+// // Verify that the lone request packet is parsed.
+// func TestParseUdp_requestPacket(t *testing.T) {
+//     store := &eventStore{}
+//     sip := newSIP(store, testing.Verbose())
+//     packet := newPacket(forward, test1.messages[0])
+//     sip.ParseUDP(packet)
+//     assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
+//     assert.True(t, store.empty(), "No result should have been published.")
+// }
+// 
+// func TestParseUdp_responsePacket(t *testing.T) {
+//     store := &eventStore{}
+//     sip := newSIP(store, testing.Verbose())
+//     packet := newPacket(reverse, test1.messages[1])
+//     sip.ParseUDP(packet)
+//     assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
+//     assert.True(t, store.empty(), "No result should have been published.")
+// }
+// 
+// func TestParseUdp_requestPacket2(t *testing.T) {
+//     store := &eventStore{}
+//     sip := newSIP(store, testing.Verbose())
+//     packet := newPacket(reverse, test1.messages[2])
+//     sip.ParseUDP(packet)
+//     assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
+//     assert.True(t, store.empty(), "No result should have been published.")
+// }
+// 
+// func TestParseUdp_responsePacket2(t *testing.T) {
+//     store := &eventStore{}
+//     sip := newSIP(store, testing.Verbose())
+//     packet := newPacket(reverse, test1.messages[3])
+//     sip.ParseUDP(packet)
+//     assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
+//     assert.True(t, store.empty(), "No result should have been published.")
+// }
+// 
+// 
+// func TestParseUdp_responseFragmentedPacket2(t *testing.T) {
+//     store := &eventStore{}
+//     sip := newSIP(store, testing.Verbose())
+//     packet1 := newPacket(reverse, test2.messages[0])
+//     packet2 := newPacket(reverse, test2.messages[1])
+//     sip.ParseUDP(packet1)
+//     sip.ParseUDP(packet2)
+// }
 
 

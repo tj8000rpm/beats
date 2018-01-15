@@ -20,6 +20,7 @@ type sipMessage struct {
     ts           time.Time          // Time when the message was received.
     tuple        common.IPPortTuple // Source and destination addresses of packet.
     cmdlineTuple *common.CmdlineTuple
+    transport    transport
 
     // SIP FirstLines
     isRequest    bool
@@ -51,39 +52,45 @@ type sipMessage struct {
 
 func (msg sipMessage) String() string {
     outputs:=""
+    outputs+=fmt.Sprintf("%s:Src:%s:%d -> Dst:%s:%d ,", msg.ts, 
+                                                        msg.tuple.SrcIP,
+                                                        msg.tuple.SrcPort,
+                                                        msg.tuple.DstIP,
+                                                        msg.tuple.DstPort)
     if msg.isRequest{
         outputs+="Request: ("
         outputs+=string(msg.method)
         outputs+=", "
         outputs+=string(msg.requestUri)
-        outputs+=")\n"
+        outputs+="), "
     }else{
         outputs+="Response: ("
         outputs+=fmt.Sprintf("%03d",msg.statusCode)
         outputs+=", "
         outputs+=string(msg.statusPhrase)
-        outputs+=")\n"
+        outputs+="), "
     }
-    outputs+=" From   : "+string(msg.from)+"\n"
-    outputs+=" To     : "+string(msg.to)+"\n"
-    outputs+=" CSeq   : "+string(msg.cseq)+"\n"
-    outputs+=" Call-ID: "+string(msg.callid)+"\n"
-    outputs+=" Headers: \n"
+    outputs+=" From   : "+string(msg.from)   + ", "
+    outputs+=" To     : "+string(msg.to)     + ", "
+    outputs+=" CSeq   : "+string(msg.cseq)   + ", "
+    outputs+=" Call-ID: "+string(msg.callid) + ", "
+    outputs+=" Headers: ["
     for header,array := range *(msg.headers){
         for idx,line:= range array{
-            outputs+=fmt.Sprintf(" - %20s[%3d] : %s\n",header,idx,line)
+            outputs+=fmt.Sprintf(" { %20s[%3d] : %s} ",header,idx,line)
         }
     }
-    outputs+=" body: \n"
+    outputs+=", body: "
     for body,maps_p := range msg.body{
-        outputs+=fmt.Sprintf(" - %s\n",body)
+        outputs+=fmt.Sprintf("{ %s : ",body)
         if(body == "application/sdp"){
             for key,lines:= range *maps_p{
                 for idx,line:= range lines{
-                    outputs+=fmt.Sprintf("  - %5s[%3d] : %s\n",key,idx,line)
+                    outputs+=fmt.Sprintf("  { %5s[%3d] : %s } ",key,idx,line)
                 }
             }
         }
+        outputs+=fmt.Sprintf(" }")
     }
     return outputs
 }
@@ -164,8 +171,6 @@ func (msg *sipMessage) parseSIPHeader() (err error){
     // TODO: 処理をきちんとかく
     // 必須ヘッダ不足
     if !(existTo && existFrom && existCSeq && existCallId && existMaxForwards && existVia){
-    //     fmt.Printf("koko?\n")
-    //     return nil
     }
 
     msg.to    =getLastElementStrArray(to_array)
@@ -281,13 +286,14 @@ func (msg *sipMessage) parseSIPHeaderToMap(cutPosS []int,cutPosE []int) (*map[st
 
 // SIPボディのパース処理
 // TODO:Content-Encoding時の処理を記載(RFC3261)
-func (msg *sipMessage) parseSIPBody(){
+func (msg *sipMessage) parseSIPBody() (err error){
 
     contenttype_array  , hd_ctype_ok   := (*msg.headers)["content-type"]
 
     // content-typeがない場合はreturnして終了
     if !hd_ctype_ok {
-        return
+        debugf("This sip message has not body.")
+        return fmt.Errorf("invalid call")
     }
 
     msg.body=map[string]*map[string][]common.NetString{}
@@ -298,16 +304,20 @@ func (msg *sipMessage) parseSIPBody(){
         case "application/sdp":
             body,err:=msg.parseBody_SDP(msg.raw[msg.bdy_start:msg.bdy_start+msg.contentlength])
             _ = err
+            if err != nil{
+                debugf("%s : parseError",lower_case_content_type)
+                return fmt.Errorf("Parse error")
+            }
 
             msg.body[lower_case_content_type]=body
 
         default:
-            fmt.Printf("unspported content-type.\n")
+            debugf("unspported content-type. : %s",lower_case_content_type)
+            return fmt.Errorf("Parse error")
 
     }
 
-    // TODO: 処理をきちんとかく
-    return 
+    return  nil
 }
 
 func (msg sipMessage) parseBody_SDP(rawData []byte) (body *map[string][]common.NetString, err error){

@@ -53,7 +53,7 @@ func (sip *sipPlugin) init(results protos.Reporter, config *sipConfig) error {
 
 // configの値からSIPとして扱うポートとかいろいろ設定できるっぽい
 func (sip *sipPlugin) setFromConfig(config *sipConfig) error {
-    sip.ports = config.Ports
+    sip.ports                 = config.Ports
     sip.fragmentBufferTimeout = config.BufferTimeout
     return nil
 }
@@ -89,9 +89,9 @@ func (sip *sipPlugin) deleteBuffer(k hashableSIPTuple) *sipBuffer {
 }
 // トランザクションがタイムアウトした時の処理
 func (sip *sipPlugin) expireBuffer(t *sipBuffer) {
-    t.notes = append(t.notes, "noResponse.Error()")
-    debugf("%s %s", "noResponse.Error()", t.tuple.String())
-    sip.publishBuffer(t)
+    //t.notes = append(t.notes, "noResponse.Error()")
+    debugf("%s %s", "bufferTimeout.Error()", t.tuple.String())
+    sip.publishBuffer(t.message)
     unmatchedRequests.Add(1)
 }
 
@@ -99,81 +99,60 @@ func (sip *sipPlugin) ConnectionTimeout() time.Duration {
     return sip.fragmentBufferTimeout
 }
 
-// publishTransactionはひとつのトランザクションを
+// publishBufferはひとつのトランザクションを
 // Elasticsearchに書き出すためのデータを作る過程??
-func (sip *sipPlugin) publishBuffer(t *sipBuffer) {
+func (sip *sipPlugin) publishBuffer(msg *sipMessage) {
     if sip.results == nil {
         return
     }
 
-    debugf("Publishing transaction. %s", t.tuple.String())
+    //debugf("Publishing SIP Message. %s", msg.String())
 
-    timestamp := t.ts
+    timestamp := msg.ts
     fields := common.MapStr{}
     fields["type"] = "sip"
-    fields["transport"] = t.transport.String()
-    fields["uac"] = &t.uac
-    fields["uas"] = &t.uas
-// コンパイル通すためにいったんコメントアウト
-//    fields["status"] = common.ERROR_STATUS
-//    if len(t.notes) == 1 {
-//        fields["notes"] = t.notes[0]
-//    } else if len(t.notes) > 1 {
-//        fields["notes"] = strings.Join(t.notes, " ")
-//    }
-//
-    sipEvent := common.MapStr{}
-    fields["sip"] = sipEvent
+    fields["transport"] = msg.transport.String()
+    fields["src"] = fmt.Sprintf("%s:%d",msg.tuple.SrcIP,msg.tuple.SrcPort)
+    fields["dst"] = fmt.Sprintf("%s:%d",msg.tuple.DstIP,msg.tuple.DstPort)
 
-// コンパイル通すためにいったんコメントアウト
-//    if t.request != nil && t.response != nil {
-//        fields["bytes_in"] = t.request.length
-//        fields["bytes_out"] = t.response.length
-//        fields["responsetime"] = int32(t.response.ts.Sub(t.ts).Nanoseconds() / 1e6)
-//        fields["method"] = sipOpCodeToString(t.request.data.Opcode)
-//        if len(t.request.data.Question) > 0 {
-//            fields["query"] = sipQuestionToString(t.request.data.Question[0])
-//            fields["resource"] = t.request.data.Question[0].Name
-//        }
-//        addSIPToMapStr(sipEvent, t.response.data, sip.includeAuthorities,
-//            sip.includeAdditionals)
-//
-//        if t.response.data.Rcode == 0 {
-//            fields["status"] = common.OK_STATUS
-//        }
-//
-//        if sip.sendRequest {
-//            fields["request"] = sipToString(t.request.data)
-//        }
-//        if sip.sendResponse {
-//            fields["response"] = sipToString(t.response.data)
-//        }
-//    } else if t.request != nil {
-//        fields["bytes_in"] = t.request.length
-//        fields["method"] = sipOpCodeToString(t.request.data.Opcode)
-//        if len(t.request.data.Question) > 0 {
-//            fields["query"] = sipQuestionToString(t.request.data.Question[0])
-//            fields["resource"] = t.request.data.Question[0].Name
-//        }
-//        addSIPToMapStr(sipEvent, t.request.data, sip.includeAuthorities,
-//            sip.includeAdditionals)
-//
-//        if sip.sendRequest {
-//            fields["request"] = sipToString(t.request.data)
-//        }
-//    } else if t.response != nil {
-//        fields["bytes_out"] = t.response.length
-//        fields["method"] = sipOpCodeToString(t.response.data.Opcode)
-//        if len(t.response.data.Question) > 0 {
-//            fields["query"] = sipQuestionToString(t.response.data.Question[0])
-//            fields["resource"] = t.response.data.Question[0].Name
-//        }
-//        addSIPToMapStr(sipEvent, t.response.data, sip.includeAuthorities,
-//            sip.includeAdditionals)
-//        if sip.sendResponse {
-//            fields["response"] = sipToString(t.response.data)
-//        }
-//    }
+    if msg.isRequest {
+        fields["method"     ] = msg.method
+        fields["request_uri"] = msg.requestUri
+    }else{
+        fields["status_code"  ] = msg.statusCode
+        fields["status_phrase"] = msg.statusPhrase
+    }
+
+    fields["from"   ] = msg.from
+    fields["to"     ] = msg.to
+    fields["cseq"   ] = msg.cseq
+    fields["call_id"] = msg.callid
+
+    sipHeaders := common.MapStr{}
+    fields["headers"] = sipHeaders
+
+    //fmt.Printf("%x\n",msg)
+    //fmt.Printf("%x\n",msg.headers)
+    if msg.headers != nil{
+        for header,lines := range *(msg.headers){
+            sipHeaders[header] = lines
+        }
+    }
+
+    sipBody := common.MapStr{}
+    fields["body"] = sipBody
+
+    if msg.body !=nil{
+        for content,keyval := range (msg.body){
+            contetMap := common.MapStr{}
+            sipBody[content] = contetMap
+            for key,val_lines := range *keyval{
+                contetMap[key] = val_lines
+            }
+        }
+    }
+
+    fmt.Printf("%s\n",fields)
 
     sip.results(beat.Event{
         Timestamp: timestamp,
@@ -200,8 +179,16 @@ func (sip *sipPlugin) sipTupleFromIPPort(t *common.IPPortTuple, trans transport)
 // then the returned sip pointer will be nil. This method recovers from panics
 // and is concurrency-safe.
 func (sip *sipPlugin) createSIPMessage(transp transport, rawData []byte) (msg *sipMessage, err error) {
+    // Recover from any panics that occur while parsing a packet.
+    defer func() {
+        if r := recover(); r != nil {
+            err = fmt.Errorf("panic: %v", r)
+        }
+    }()
+
     // SipMessageを作成、rawDataを保持
     msg = &sipMessage{}
+    msg.transport=transp
     msg.raw = rawData
 
     msg.hdr_start    =-1
@@ -209,19 +196,17 @@ func (sip *sipPlugin) createSIPMessage(transp transport, rawData []byte) (msg *s
     msg.bdy_start    =-1
     msg.contentlength=-1
 
-//    var offset int
-//    if transp == transportTCP {
-//        offset = decodeOffset
-//    }
-
-
-    // Recover from any panics that occur while parsing a packet.
-    defer func() {
-        if r := recover(); r != nil {
-            err = fmt.Errorf("panic: %v", r)
-        }
-    }()
     return msg, nil
+}
+
+func (sip *sipPlugin) newBuffer(ts time.Time, tuple sipTuple, cmd common.CmdlineTuple,msg *sipMessage) *sipBuffer {
+    buffer := &sipBuffer{
+        transport: tuple.transport,
+        ts:        ts,
+        tuple:     tuple,
+        message:   msg,
+    }
+    return buffer
 }
 
 // udpパケットで呼ばれた際のパース
@@ -241,7 +226,7 @@ func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
 
     if buffer == nil {
         // 新規もの
-        fmt.Printf(": %s\n",sipTuple)
+        debugf("New sip message(not in buffer): %s",sipTuple)
 
         sipMsg, err = sip.createSIPMessage(transportUDP, pkt.Payload)
         sipMsg.ts   =pkt.Ts
@@ -250,7 +235,7 @@ func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
 
         parseHeaderErr:=sipMsg.parseSIPHeader()
         if parseHeaderErr != nil{
-            fmt.Printf("error %s\n",parseHeaderErr)
+            debugf("error %s\n",parseHeaderErr)
             return
         }
     }else{
@@ -262,19 +247,19 @@ func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
     
     // SIPメッセージがヘッダの途中でフラグメントされていた場合
     if sipMsg.hdr_len <= 0 {
-        fmt.Printf("Header fragment")
+        debugf("Header fragment")
         if buffer == nil{
-            buffer = newBuffer(sipMsg.ts, sipTuple, *sipMsg.cmdlineTuple, sipMsg)
+            buffer = sip.newBuffer(sipMsg.ts, sipTuple, *sipMsg.cmdlineTuple, sipMsg)
         }
         sip.addBuffer(sipTuple.hashable(),buffer)
         return
 
     // SIPメッセージがボディの途中でフラグメントされていた場合
     } else if sipMsg.contentlength == -1{
-        fmt.Printf("Body fragment")
+        debugf("Body fragment")
 
         if buffer == nil{
-            buffer = newBuffer(sipMsg.ts, sipTuple, *sipMsg.cmdlineTuple, sipMsg)
+            buffer = sip.newBuffer(sipMsg.ts, sipTuple, *sipMsg.cmdlineTuple, sipMsg)
         }
         sip.addBuffer(sipTuple.hashable(),buffer)
         return
@@ -287,7 +272,9 @@ func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
         sipMsg.parseSIPBody()
     }
 
-    fmt.Printf("%s\n",sipMsg)
+    sip.publishBuffer(sipMsg)
+
+    //fmt.Printf("%s\n",sipMsg)
     _ = err
 
 }

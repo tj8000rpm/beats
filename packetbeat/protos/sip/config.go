@@ -6,8 +6,8 @@ import (
 )
 
 type sipConfig struct {
-	config.ProtocolCommon `config:",inline"`
-    BufferTimeout         time.Duration `config:"buffer_timeout"`
+	config.ProtocolCommon       `config:",inline"`
+    BufferTimeout time.Duration `config:"buffer_timeout"`
 }
 
 var (
@@ -15,5 +15,6 @@ var (
 		ProtocolCommon: config.ProtocolCommon{
 //			TransactionTimeout: protos.DefaultTransactionExpiration,
 		},
+        BufferTimeout: 5 * time.Second,
 	}
 )

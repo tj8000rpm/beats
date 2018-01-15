@@ -78,16 +78,6 @@ func New(
     return p, nil
 }
 
-func newBuffer(ts time.Time, tuple sipTuple, cmd common.CmdlineTuple,msg *sipMessage) *sipBuffer {
-    buffer := &sipBuffer{
-        transport: tuple.transport,
-        ts:        ts,
-        tuple:     tuple,
-        message:   msg,
-    }
-    return buffer
-}
-
 func getLastElementStrArray(array []common.NetString) common.NetString{
     return array[len(array)-1]
 }

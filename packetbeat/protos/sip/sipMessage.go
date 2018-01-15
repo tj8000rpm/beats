@@ -47,7 +47,6 @@ type sipMessage struct {
     hdr_start    int
     hdr_len      int
     bdy_start    int
-
 }
 
 func (msg sipMessage) String() string {
@@ -140,14 +139,12 @@ func (msg *sipMessage) parseSIPHeader() (err error){
     // hdr_startの値を記載
     msg.hdr_start=hdr_start
 
-    // TODO:ヘッダの終了位置がわからなかった時とかの処理
-    // fragmented packetが入ってきた場合はこっちに来るのでその処理を書かないと・・・
+    //CRLFしかないパケット
     if hdr_start < 0 {
-        //CRLFしかないパケット
         return fmt.Errorf("malformed packet")
     }
+    //ヘッダ途中でフラグメントされた（と思しき）パケット
     if hdr_end < 0 {
-        //ヘッダ途中でフラグメントされた（と思しき）パケット
         //TODO:SIPパケットでない可能性もあり。
         return nil
     }
@@ -190,14 +187,15 @@ func (msg *sipMessage) parseSIPHeader() (err error){
         msg.requestUri=common.NetString(first_lines[1])
     }else if strings.Contains(first_lines[0],"SIP/2.0") { // Response
         parsedStatusCode,err := strconv.ParseInt(first_lines[1],10,16)
-        _ = err
-        
-        // TODO:パース失敗時のエラーハンドリングを追加
-        msg.statusCode  =uint16(parsedStatusCode)
-        msg.statusPhrase=common.NetString(first_lines[2])
+        if err !=nil {
+            msg.statusCode  =uint16(parsedStatusCode)
+            msg.statusPhrase=common.NetString(first_lines[2])
+        }else{
+            msg.statusCode  =uint16(999)
+            msg.statusPhrase=common.NetString("Unknown Status")
+        }
     }else{
         // TODO:Malformed Packets
-        // 何かしらのエラーハンドリングが必要
         return fmt.Errorf("malformed packet(thi is not sip messages)")
     }
 
@@ -232,13 +230,13 @@ func (msg *sipMessage) parseSIPHeader() (err error){
     msg.contentlength=contentlength
 
     if msg.bdy_start + msg.contentlength > byte_len {
-        // TODO:
-        // fragmented packetの場合、未受信部分があるのでバッファリングの処理に入る・・・かな？
-        // とりあえず現状は取れる分だけとっとく。
-        // 
+        // ボディが未受信の場合はボディ未受信を表すために
+        // contentlength=-1を設定し、バッファリングし
+        // 再度SIPとしてパースするようにする
         msg.contentlength=-1
     }
 
+    // 問題なければerr=nil
     return nil
 }
 
@@ -257,7 +255,7 @@ func (msg *sipMessage) parseSIPHeaderToMap(cutPosS []int,cutPosE []int) (*map[st
             // 途中で改行された場合の処理(先頭がスペース、またはタブ)
             // Call-Id: hogehoge--adslfaaiii
             //  higehige@hogehoge.com
-            // みたいなケース
+            // みたいなケースに対応
             if msg.raw[s] == byte(' ') || msg.raw[s] == byte('\t'){
                 if lastheader!=""{
                     lastelement:=string(getLastElementStrArray((*headers)[lastheader]))
@@ -285,7 +283,7 @@ func (msg *sipMessage) parseSIPHeaderToMap(cutPosS []int,cutPosE []int) (*map[st
 }
 
 // SIPボディのパース処理
-// TODO:Content-Encoding時の処理を記載(RFC3261)
+// TODO:Content-Encoding時の処理(RFC3261) 未実装
 func (msg *sipMessage) parseSIPBody() (err error){
 
     contenttype_array  , hd_ctype_ok   := (*msg.headers)["content-type"]

@@ -99,8 +99,7 @@ func (sip *sipPlugin) ConnectionTimeout() time.Duration {
     return sip.fragmentBufferTimeout
 }
 
-// publishBufferはひとつのトランザクションを
-// Elasticsearchに書き出すためのデータを作る過程??
+// publishBufferはsipMessageをjsonとしてプッシュするように整形する
 func (sip *sipPlugin) publishBuffer(msg *sipMessage) {
     if sip.results == nil {
         return
@@ -131,8 +130,6 @@ func (sip *sipPlugin) publishBuffer(msg *sipMessage) {
     sipHeaders := common.MapStr{}
     fields["headers"] = sipHeaders
 
-    //fmt.Printf("%x\n",msg)
-    //fmt.Printf("%x\n",msg.headers)
     if msg.headers != nil{
         for header,lines := range *(msg.headers){
             sipHeaders[header] = lines
@@ -151,8 +148,6 @@ func (sip *sipPlugin) publishBuffer(msg *sipMessage) {
             }
         }
     }
-
-    fmt.Printf("%s\n",fields)
 
     sip.results(beat.Event{
         Timestamp: timestamp,
@@ -229,6 +224,7 @@ func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
         debugf("New sip message(not in buffer): %s",sipTuple)
 
         sipMsg, err = sip.createSIPMessage(transportUDP, pkt.Payload)
+        _ = err
         sipMsg.ts   =pkt.Ts
         sipMsg.tuple=pkt.Tuple
         sipMsg.cmdlineTuple=procs.ProcWatcher.FindProcessesTuple(&pkt.Tuple)
@@ -274,8 +270,6 @@ func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
 
     sip.publishBuffer(sipMsg)
 
-    //fmt.Printf("%s\n",sipMsg)
-    _ = err
 
 }
 

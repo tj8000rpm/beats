@@ -23,7 +23,7 @@ const (
     serverIP   = "192.168.0.1"
     serverPort = 5060
     clientIP   = "10.0.0.1"
-    clientPort = 34898
+    clientPort = 5060
 )
 
 // DnsTestMessage holds the data that is expected to be returned when parsing
@@ -115,7 +115,7 @@ var (
                               "Max-Forwards: 70\r\n"                                                      +
                               "Content-Type: application/sdp\r\n"                                         +
                               "Privacy: none\r\n"                                                         +
-                              "P-Preferred-Identity: <sip:nod2324030@example.com>\r\n"                    +
+                              "P-Preferred-Identity: <sip:hogehoge@example.com>\r\n"                    +
                               "User-Agent: Some User-Agent\r\n"                                           +
                               "Proxy-Authorization: Digest username=\"hogehoge\", realm=\"example.com\"," + // 改行していない
                               " nonce=\"15044921123142536\", uri=\"sip:0312345678@192.168.0.1:5060\","    + // 改行していない
@@ -148,7 +148,7 @@ var (
                               "Max-Forwards: 70\r\n"                                                      +
                               "Content-Type: application/sdp\r\n"                                         +
                               "Privacy: none\r\n"                                                         +
-                              "P-Preferred-Identity: <sip:nod2324030@example.com>\r\n"                    +
+                              "P-Preferred-Identity: <sip:hogehoge@example.com>\r\n"                    +
                               "User-Agent: Some User-Agent\r\n"                                           +
                               "Proxy-Authorization: Digest username=\"hogehoge\", realm=\"example.com\"," + // 改行していない
                               " nonce=\"15044921123142536\", uri=\"sip:0312345678@192.168.0.1:5060\","    + // 改行していない
@@ -184,7 +184,7 @@ var (
                               "Max-Forwards: 70\r\n"                                                      +
                               "Content-Type: application/sdp\r\n"                                         +
                               "Privacy: none\r\n"                                                         +
-                              "P-Preferred-Identity: <sip:nod2324030@example.com>\r\n"                    +
+                              "P-Preferred-Identity: <sip:hogehoge@example.com>\r\n"                    +
                               "User-Agent: Some User-Agent\r\n"                                           +
                               "Proxy-Authorization: Digest username=\"hogehoge\", realm=\"example.com\"," + // 改行していない
                               " nonce=\"15044921123142536\", uri=\"sip:0312345678@192.168.0.1:5060\","    + // 改行していない
@@ -258,7 +258,7 @@ func TestParseUdp_emptyPacket(t *testing.T) {
     sip := newSIP(store, testing.Verbose())
     packet := newPacket(forward, []byte{})
     sip.ParseUDP(packet)
-    assert.Empty(t, sip.transactions.Size(), "There should be no transactions.")
+    assert.Empty(t, sip.fragmentBuffer.Size(), "There should be no transactions.")
     assert.True(t, store.empty(), "No result should have been published.")
 }
 
@@ -268,7 +268,7 @@ func TestParseUdp_malformedPacket(t *testing.T) {
     garbage := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}
     packet := newPacket(forward, garbage)
     sip.ParseUDP(packet)
-    assert.Empty(t, sip.transactions.Size(), "There should be no transactions.")
+    assert.Empty(t, sip.fragmentBuffer.Size(), "There should be no transactions.")
 
     // As a future addition, a malformed message should publish a result.
 }
@@ -279,7 +279,7 @@ func TestParseUdp_requestPacket(t *testing.T) {
     sip := newSIP(store, testing.Verbose())
     packet := newPacket(forward, test1.messages[0])
     sip.ParseUDP(packet)
-    assert.Equal(t, 1, sip.transactions.Size(), "There should be one transaction.")
+    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
     assert.True(t, store.empty(), "No result should have been published.")
 }
 
@@ -288,7 +288,7 @@ func TestParseUdp_responsePacket(t *testing.T) {
     sip := newSIP(store, testing.Verbose())
     packet := newPacket(reverse, test1.messages[1])
     sip.ParseUDP(packet)
-    assert.Equal(t, 1, sip.transactions.Size(), "There should be one transaction.")
+    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
     assert.True(t, store.empty(), "No result should have been published.")
 }
 
@@ -297,7 +297,7 @@ func TestParseUdp_requestPacket2(t *testing.T) {
     sip := newSIP(store, testing.Verbose())
     packet := newPacket(reverse, test1.messages[2])
     sip.ParseUDP(packet)
-    assert.Equal(t, 1, sip.transactions.Size(), "There should be one transaction.")
+    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
     assert.True(t, store.empty(), "No result should have been published.")
 }
 
@@ -306,8 +306,18 @@ func TestParseUdp_responsePacket2(t *testing.T) {
     sip := newSIP(store, testing.Verbose())
     packet := newPacket(reverse, test1.messages[3])
     sip.ParseUDP(packet)
-    assert.Equal(t, 1, sip.transactions.Size(), "There should be one transaction.")
+    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
     assert.True(t, store.empty(), "No result should have been published.")
+}
+
+
+func TestParseUdp_responseFragmentedPacket2(t *testing.T) {
+    store := &eventStore{}
+    sip := newSIP(store, testing.Verbose())
+    packet1 := newPacket(reverse, test2.messages[0])
+    packet2 := newPacket(reverse, test2.messages[1])
+    sip.ParseUDP(packet1)
+    sip.ParseUDP(packet2)
 }
 
 

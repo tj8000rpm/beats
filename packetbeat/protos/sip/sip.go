@@ -14,25 +14,18 @@ import (
     //"reflect"
 
     "github.com/elastic/beats/libbeat/beat"
-    "github.com/elastic/beats/libbeat/common"
+	"github.com/elastic/beats/libbeat/common"
     "github.com/elastic/beats/libbeat/logp"
     "github.com/elastic/beats/libbeat/monitoring"
 
+    "github.com/elastic/beats/packetbeat/procs"
     "github.com/elastic/beats/packetbeat/protos"
-
 )
 
 var (
     debugf = logp.MakeDebug("sip")
 )
 
-// const maxDNSTupleRawSize = 16 + 16 + 2 + 2 + 4 + 1 // bytes?
-const maxHashableSipTupleRawSize = 16 + // ip addr (src) 128bit(ip v6)
-                                   16 + // ip addr (dst) 128bit(ip v6)
-                                    2 + // port number (src) 16bit
-                                    2 + // port number (dst) 16bit
-                                    4 + // id 32bit
-                                    1   // transport 8bit 
 
 // Only EDNS packets should have their size beyond this value
 const maxSIPPacketSize = (1 << 9) // 512 (bytes)
@@ -47,11 +40,6 @@ const (
     request  = false
     response = true
 )
-
-// きっとトランスポートプロトコルのTCPだとかUDPだとかを保持する変数
-// transport=0 tcp, transport=1, udpみたいでつ。
-// Transport protocol.
-type transport uint8
 
 // TODOなんやこれ
 // きっと何か失敗したときに返すもの・・・NewIntの処理は不明のため調べる
@@ -69,41 +57,28 @@ const (
     transportUDP
 )
 
-var transportNames = []string{
-    "tcp",
-    "udp",
-}
 
-// var=t transport
-// t=0
-// print(t.String())
-// >> tcpみたいな。
-func (t transport) String() string {
-    if int(t) >= len(transportNames) {
-        return "impossible"
-    }
-    return transportNames[t]
-}
+// const maxDNSTupleRawSize = 16 + 16 + 2 + 2 + 4 + 1 // bytes?
+const maxHashableSipTupleRawSize = 16 + // ip addr (src) 128bit(ip v6)
+                                   16 + // ip addr (dst) 128bit(ip v6)
+                                    2 + // port number (src) 16bit
+                                    2 + // port number (dst) 16bit
+                                    1   // transport 8bit 
 
 type hashableSIPTuple [maxHashableSipTupleRawSize]byte
 
 
-// TODO
-// 管理方法を考える
-// TransactionよりもSIPの場合はDialogとしたほうがよいか？
-// そもそもRequest-Responseを識別する必要もあるのか・・・？
-// それともSIPのTransactionで管理したほうがよいか？
-type sipTransaction struct {
+// SIPなのでダイアログで取るのはメモリやリアルタイム性から微妙と判断
+// SIPのメッセージは1つ1つをそのまま書き出す方向で実装
+// UDPのフラグメントだけ気にして実装
+type sipBuffer struct {
     ts           time.Time // Time when the request was received.
     tuple        sipTuple  // Key used to track this transaction in the transactionsMap.
-    responseTime int32     // Elapsed time in milliseconds between the request and response.
-    src          common.Endpoint
-    dst          common.Endpoint
+    uac          common.Endpoint
+    uas          common.Endpoint
     transport    transport
     notes        []string
-    // んーsipだしどうやってデータをもつべきだろうか・・・？
-    request  *sipMessage
-    response *sipMessage
+    message  *sipMessage
 }
 
 /**
@@ -136,38 +111,15 @@ func New(
 }
 
 
-func sipTupleFromIPPort(t *common.IPPortTuple, trans transport, id uint16) sipTuple {
-    tuple := sipTuple{
-        ipLength:  t.IPLength,
-        srcIP:     t.SrcIP,
-        dstIP:     t.DstIP,
-        srcPort:   t.SrcPort,
-        dstPort:   t.DstPort,
-        transport: trans,
-        id:        id,
-    }
-    tuple.computeHashebles()
 
-    return tuple
-}
-
-func newTransaction(ts time.Time, tuple sipTuple, cmd common.CmdlineTuple) *sipTransaction {
-    trans := &sipTransaction{
+func newBuffer(ts time.Time, tuple sipTuple, cmd common.CmdlineTuple,msg *sipMessage) *sipBuffer {
+    buffer := &sipBuffer{
         transport: tuple.transport,
         ts:        ts,
         tuple:     tuple,
+        message:   msg,
     }
-    trans.src = common.Endpoint{
-        IP:   tuple.srcIP.String(),
-        Port: tuple.srcPort,
-        Proc: string(cmd.Src),
-    }
-    trans.dst = common.Endpoint{
-        IP:   tuple.dstIP.String(),
-        Port: tuple.dstPort,
-        Proc: string(cmd.Dst),
-    }
-    return trans
+    return buffer
 }
 
 // Adds the SIP message data to the supplied MapStr.
@@ -185,6 +137,49 @@ func sipToString(sip []byte) string {
 
 func getLastElementStrArray(array []common.NetString) common.NetString{
     return array[len(array)-1]
+}
+
+func rightIpLargeThanLeftIp(leftip net.IP,rightip net.IP) bool {
+
+    for i:=0; i<len(leftip);i++{
+        left_ed :=leftip[i]
+        right_ed:=rightip[i]
+
+        if(left_ed<right_ed){
+            return true
+        }else if left_ed==right_ed {
+            continue
+        }else{
+            return false
+        }
+    }
+    return false
+}
+
+/**
+ ******************************************************************
+ * transport
+ *******************************************************************
+ **/
+
+// きっとトランスポートプロトコルのTCPだとかUDPだとかを保持する変数
+// transport=0 tcp, transport=1, udpみたいでつ。
+// Transport protocol.
+type transport uint8
+
+
+// %sで呼び出す時の暗黙関数名 -> String()
+func (t transport) String() string {
+
+    transportNames := []string{
+        "tcp",
+        "udp",
+    }
+
+    if int(t) >= len(transportNames) {
+        return "impossible"
+    }
+    return transportNames[t]
 }
 
 /**
@@ -267,6 +262,12 @@ func (msg sipMessage) String() string {
     return outputs
 }
 func (msg *sipMessage) parseSIPHeader(){
+    msg.hdr_start =-1
+    msg.hdr_end   =-1
+    msg.bdy_start =-1
+    msg.bdy_end   =-1
+    msg.contentlen=-1
+
 
     // SIPのヘッダとボディの区切りとそれまでのCRLFで改行が入っている箇所を探す
     cutPosS := []int{} // SIPメッセージの先頭、またはCRLFの直後のバイト位置
@@ -319,7 +320,6 @@ func (msg *sipMessage) parseSIPHeader(){
 
     // 正常系処理
     // SIP
-    //headers:=map[string][]common.NetString{}
     headers, first_lines:=msg.parseSIPHeaderToMap(cutPosS,cutPosE)
 
     // mandatory header fields check
@@ -479,6 +479,11 @@ func (msg sipMessage) parseBody_SDP(rawData []byte) (body *map[string][]common.N
     return body, nil
 }
 
+func (msg sipMessage) addRawData(rawData []byte) {
+    for _,bdata:= range rawData{
+        msg.raw=append(msg.raw,bdata)
+    }
+}
 
 
 /**
@@ -492,71 +497,38 @@ func (msg sipMessage) parseBody_SDP(rawData []byte) (body *map[string][]common.N
 // Memo:
 //  Call-IDの長さは決まらない気がするのでハッシュ化して長さを一定にする・・
 type sipTuple struct {
-    ipLength         int
-    srcIP, dstIP     net.IP
-    srcPort, dstPort uint16
-    transport        transport
-    //hashed_callid    uint32??
-    id             uint16 //idと一応しておくだれがIDふるのかわからんけど・・・ 
+    ipLength                 int
+    smallIP, largeIP         net.IP
+    smallIpPort, largeIpPort uint16
+    transport                transport
 
-    raw    hashableSIPTuple // Src_ip:Src_port:Dst_ip:Dst_port:Transport:id ***Hashed_Call-Id
-    revRaw hashableSIPTuple // Dst_ip:Dst_port:Src_ip:Src_port:Transport:id ***Hashed_Call-Id
-}
-
-func (t sipTuple) reverse() sipTuple {
-    return sipTuple{
-        ipLength:  t.ipLength,
-        srcIP:     t.dstIP,
-        dstIP:     t.srcIP,
-        srcPort:   t.dstPort,
-        dstPort:   t.srcPort,
-        transport: t.transport,
-        id:        t.id,
-        raw:       t.revRaw,
-        revRaw:    t.raw,
-    }
+    raw    hashableSIPTuple // smallIP:smallIpPort:larageIP:largeIpPort:transport
 }
 
 //めっちゃハードコードやん・・
-// とりあえずDNSのままで
+// とりあえずDNSとおんなじ方法で
 func (t *sipTuple) computeHashebles() {
-    copy(t.raw[0:16], t.srcIP)
-    copy(t.raw[16:18], []byte{byte(t.srcPort >> 8), byte(t.srcPort)})
-    copy(t.raw[18:34], t.dstIP)
-    copy(t.raw[34:36], []byte{byte(t.dstPort >> 8), byte(t.dstPort)})
-    copy(t.raw[36:38], []byte{byte(t.id >> 8), byte(t.id)})
-    t.raw[39] = byte(t.transport)
-
-    copy(t.revRaw[0:16], t.dstIP)
-    copy(t.revRaw[16:18], []byte{byte(t.dstPort >> 8), byte(t.dstPort)})
-    copy(t.revRaw[18:34], t.srcIP)
-    copy(t.revRaw[34:36], []byte{byte(t.srcPort >> 8), byte(t.srcPort)})
-    copy(t.revRaw[36:38], []byte{byte(t.id >> 8), byte(t.id)})
-    t.revRaw[39] = byte(t.transport)
+    copy(t.raw[0:16], t.smallIP)
+    copy(t.raw[16:18], []byte{byte(t.smallIpPort >> 8), byte(t.smallIpPort)})
+    copy(t.raw[18:34], t.largeIP)
+    copy(t.raw[34:36], []byte{byte(t.largeIpPort >> 8), byte(t.largeIpPort)})
+    t.raw[36] = byte(t.transport)
 }
 
-func (t *sipTuple) String() string {
-    return fmt.Sprintf("sipTuple src[%s:%d] dst[%s:%d] transport[%s] id[%d]",
-        t.srcIP.String(),
-        t.srcPort,
-        t.dstIP.String(),
-        t.dstPort,
-        t.transport,
-        t.id)
+func (t sipTuple) String() string {
+    return fmt.Sprintf("sipTuple small[%s:%d] large[%s:%d] transport[%s]",
+        t.smallIP.String(),
+        t.smallIpPort,
+        t.largeIP.String(),
+        t.largeIpPort,
+        t.transport)
 }
 
 // Hashable returns a hashable value that uniquely identifies
-// the DNS tuple.
+// the SIP tuple.
 func (t *sipTuple) hashable() hashableSIPTuple {
     return t.raw
 }
-
-// Hashable returns a hashable value that uniquely identifies
-// the DNS tuple after swapping the source and destination.
-func (t *sipTuple) revHashable() hashableSIPTuple {
-    return t.revRaw
-}
-
 
 /**
  ******************************************************************
@@ -574,42 +546,31 @@ type sipPlugin struct {
     // SIPのアクティブなトランザクションをキャッシュする。
     // Cache of active SIP transactions. The map key is the HashableSipTuple
     // associated with the request.
-    transactions       *common.Cache
-    transactionTimeout time.Duration
+    fragmentBuffer       *common.Cache
+    fragmentBufferTimeout time.Duration
 
     results protos.Reporter // Channel where results are pushed.
 }
 // Transactionとしてタイムアウトさせる方法とかがここにありそう。
 func (sip *sipPlugin) init(results protos.Reporter, config *sipConfig) error {
     sip.setFromConfig(config)
-    sip.transactions = common.NewCacheWithRemovalListener(
-        sip.transactionTimeout,
-        protos.DefaultTransactionHashSize,
-        func(k common.Key, v common.Value) {
-            trans, ok := v.(*sipTransaction)
+    sip.fragmentBuffer = common.NewCacheWithRemovalListener(
+        sip.fragmentBufferTimeout,                 // タイムアウト時間の設定
+        protos.DefaultTransactionHashSize,      // ハッシュサイズの設定
+        func(k common.Key, v common.Value) {    // remove時のCallbackFunction
+            buffer, ok := v.(*sipBuffer)
             if !ok {
                 logp.Err("Expired value is not a *SipTransaction.")
                 return
             }
-            sip.expireTransaction(trans)
+            sip.expireBuffer(buffer)
         })
-    sip.transactions.StartJanitor(sip.transactionTimeout)
+    sip.fragmentBuffer.StartJanitor(sip.fragmentBufferTimeout)
 
     sip.results = results
 
     return nil
 }
-// 参考HTTPのinit
-// // Init initializes the HTTP protocol analyser.
-// func (http *httpPlugin) init(results protos.Reporter, config *httpConfig) error {
-//     http.setFromConfig(config)
-// 
-//     isDebug = logp.IsDebug("http")
-//     isDetailed = logp.IsDebug("httpdetailed")
-//     http.results = results
-//     return nil
-// }
-
 
 // configの値からSIPとして扱うポートとかいろいろ設定できるっぽい
 func (sip *sipPlugin) setFromConfig(config *sipConfig) error {
@@ -618,29 +579,7 @@ func (sip *sipPlugin) setFromConfig(config *sipConfig) error {
     sip.sendResponse = config.SendResponse
     sip.includeAuthorities = config.IncludeAuthorities
     sip.includeAdditionals = config.IncludeAdditionals
-    sip.transactionTimeout = config.TransactionTimeout
-    return nil
-}
-
-// getTransaction returns the transaction associated with the given
-// HashableSipTuple. The lookup key should be the HashableDnsTuple associated
-// with the request (src is the requestor). Nil is returned if the entry
-// does not exist.
-func (sip *sipPlugin) getTransaction(k hashableSIPTuple) *sipTransaction {
-    v := sip.transactions.Get(k)
-    if v != nil {
-        return v.(*sipTransaction)
-    }
-    return nil
-}
-
-// deleteTransaction deletes an entry from the transaction map and returns
-// the deleted element. If the key does not exist then nil is returned.
-func (sip *sipPlugin) deleteTransaction(k hashableSIPTuple) *sipTransaction {
-    v := sip.transactions.Delete(k)
-    if v != nil {
-        return v.(*sipTransaction)
-    }
+    sip.fragmentBufferTimeout = config.TransactionTimeout
     return nil
 }
 
@@ -648,79 +587,47 @@ func (sip *sipPlugin) GetPorts() []int {
     return sip.ports
 }
 
+func (sip *sipPlugin) addBuffer(k hashableSIPTuple,buffer *sipBuffer) {
+
+    sip.fragmentBuffer.Put(k, buffer)
+}
+
+// getBuffer returns the transaction associated with the given
+// HashableSipTuple. The lookup key should be the HashableDnsTuple associated
+// with the request (src is the requestor). Nil is returned if the entry
+// does not exist.
+func (sip *sipPlugin) getBuffer(k hashableSIPTuple) *sipBuffer {
+    v := sip.fragmentBuffer.Get(k)
+    if v != nil {
+        return v.(*sipBuffer)
+    }
+    return nil
+}
+
+// deleteTransaction deletes an entry from the transaction map and returns
+// the deleted element. If the key does not exist then nil is returned.
+func (sip *sipPlugin) deleteBuffer(k hashableSIPTuple) *sipBuffer {
+    v := sip.fragmentBuffer.Delete(k)
+    if v != nil {
+        return v.(*sipBuffer)
+    }
+    return nil
+}
+// トランザクションがタイムアウトした時の処理
+func (sip *sipPlugin) expireBuffer(t *sipBuffer) {
+    t.notes = append(t.notes, "noResponse.Error()")
+    debugf("%s %s", "noResponse.Error()", t.tuple.String())
+    sip.publishBuffer(t)
+    unmatchedRequests.Add(1)
+}
+
 func (sip *sipPlugin) ConnectionTimeout() time.Duration {
-    return sip.transactionTimeout
-}
-
-func (sip *sipPlugin) receivedSIPRequest(tuple *sipTuple, msg *sipMessage) {
-    debugf("Processing query. %s", tuple.String())
-
-    trans := sip.deleteTransaction(tuple.hashable())
-    if trans != nil {
-        // This happens if a client puts multiple requests in flight
-        // with the same ID.
-        trans.notes = append(trans.notes, "duplicateQueryMsg.Error()")
-        debugf("%s %s", "duplicateQueryMsg.Error()", tuple.String())
-        sip.publishTransaction(trans)
-        sip.deleteTransaction(trans.tuple.hashable())
-    }
-
-    trans = newTransaction(msg.ts, *tuple, *msg.cmdlineTuple)
-
-// コンパイル通すためにいったんコメントアウト
-//    if tuple.transport == transportUDP && (msg.data.IsEdns0() != nil) && msg.length > maxSIPPacketSize {
-//        trans.notes = append(trans.notes, "udpPacketTooLarge.Error()")
-//        debugf("%s", "udpPacketTooLarge.Error()")
-//    }
-
-    sip.transactions.Put(tuple.hashable(), trans)
-    trans.request = msg
-}
-
-func (sip *sipPlugin) receivedSIPResponse(tuple *sipTuple, msg *sipMessage) {
-    debugf("Processing response. %s", tuple.String())
-
-    trans := sip.getTransaction(tuple.revHashable())
-    if trans == nil {
-        trans = newTransaction(msg.ts, tuple.reverse(), common.CmdlineTuple{
-            Src: msg.cmdlineTuple.Dst, Dst: msg.cmdlineTuple.Src})
-        trans.notes = append(trans.notes, "orphanedResponse.Error()")
-        debugf("%s %s", "orphanedResponse.Error()", tuple.String())
-        unmatchedResponses.Add(1)
-    }
-
-    trans.response = msg
-
-    if tuple.transport == transportUDP {
-// コンパイル通すためにいったんコメントアウト
-//        respIsEdns := msg.data.IsEdns0() != nil
-//        if !respIsEdns && msg.length > maxSIPPacketSize {
-//            trans.notes = append(trans.notes, udpPacketTooLarge.responseError())
-//            debugf("%s", udpPacketTooLarge.responseError())
-//        }
-//
-//        request := trans.request
-//        if request != nil {
-//            reqIsEdns := request.data.IsEdns0() != nil
-//
-//            switch {
-//            case reqIsEdns && !respIsEdns:
-//                trans.notes = append(trans.notes, respEdnsNoSupport.Error())
-//                debugf("%s %s", respEdnsNoSupport.Error(), tuple.String())
-//            case !reqIsEdns && respIsEdns:
-//                trans.notes = append(trans.notes, respEdnsUnexpected.Error())
-//                debugf("%s %s", respEdnsUnexpected.Error(), tuple.String())
-//            }
-//        }
-    }
-
-    sip.publishTransaction(trans)
-    sip.deleteTransaction(trans.tuple.hashable())
+    return sip.fragmentBufferTimeout
 }
 
 // publishTransactionはひとつのトランザクションを
-// Elasticsearchに書き出すためのデータを作る過程
-func (sip *sipPlugin) publishTransaction(t *sipTransaction) {
+// Elasticsearchに書き出すためのデータを作る過程??
+func (sip *sipPlugin) publishBuffer(t *sipBuffer) {
     if sip.results == nil {
         return
     }
@@ -731,8 +638,8 @@ func (sip *sipPlugin) publishTransaction(t *sipTransaction) {
     fields := common.MapStr{}
     fields["type"] = "sip"
     fields["transport"] = t.transport.String()
-    fields["src"] = &t.src
-    fields["dst"] = &t.dst
+    fields["uac"] = &t.uac
+    fields["uas"] = &t.uas
 // コンパイル通すためにいったんコメントアウト
 //    fields["status"] = common.ERROR_STATUS
 //    if len(t.notes) == 1 {
@@ -800,18 +707,50 @@ func (sip *sipPlugin) publishTransaction(t *sipTransaction) {
     })
 }
 
-// トランザクションがタイムアウトした時の処理
-func (sip *sipPlugin) expireTransaction(t *sipTransaction) {
-    t.notes = append(t.notes, "noResponse.Error()")
-    debugf("%s %s", "noResponse.Error()", t.tuple.String())
-    sip.publishTransaction(t)
-    unmatchedRequests.Add(1)
+func (sip *sipPlugin) sipTupleFromIPPort(t *common.IPPortTuple, trans transport) sipTuple {
+
+    var smallIP     net.IP
+    var largeIP     net.IP
+    var smallIpPort uint16
+    var largeIpPort uint16
+
+    Dst_lt_Src:=true
+
+    // SIPアドレスの大小で判断させる
+    if rightIpLargeThanLeftIp(t.SrcIP,t.DstIP) || t.SrcIP.Equal(t.DstIP) && t.SrcPort < t.DstPort{
+        Dst_lt_Src=false
+    }
+
+    // Dst < Srcの時の処理
+    if Dst_lt_Src{
+        smallIP     = t.DstIP
+        smallIpPort = t.DstPort
+        largeIP     = t.SrcIP
+        largeIpPort = t.SrcPort
+    // Dst >= Srcの時の処理
+    }else{
+        smallIP     = t.SrcIP
+        smallIpPort = t.SrcPort
+        largeIP     = t.DstIP
+        largeIpPort = t.DstPort
+    }
+    
+    tuple := sipTuple{
+        ipLength:      t.IPLength,
+        smallIP:       smallIP,
+        largeIP:       largeIP,
+        smallIpPort:   smallIpPort,
+        largeIpPort:   largeIpPort,
+        transport:     trans,
+    }
+    tuple.computeHashebles()
+
+    return tuple
 }
 
 // decodeSIPData decodes a byte array into a SIP struct. If an error occurs
 // then the returned sip pointer will be nil. This method recovers from panics
 // and is concurrency-safe.
-//func (sip *sipPlugin) decodeSIPData(ts time.Time, tuple common.IPPortTuple, cmdlineTuple *common.CmdlineTuple, transp transport, rawData []byte) (msg *sipMessage, err error) {
 func (sip *sipPlugin) createSIPMessage(transp transport, rawData []byte) (msg *sipMessage, err error) {
     // SipMessageを作成、rawDataを保持
     msg = &sipMessage{}
@@ -847,18 +786,63 @@ func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
     debugf("Parsing packet addressed with %s of length %d.",
         pkt.Tuple.String(), packetSize)
 
-    sipMsg, err:= sip.createSIPMessage(transportUDP, pkt.Payload)
-    sipMsg.parseSIPHeader()
+    sipTuple := sip.sipTupleFromIPPort(&pkt.Tuple, transportUDP)
+    var buffer *sipBuffer
+    buffer = sip.deleteBuffer(sipTuple.hashable())
+
+    var sipMsg *sipMessage
+    var err error
+
+    if buffer == nil {
+        // 新規もの
+        fmt.Printf(": %s\n",sipTuple)
+
+        sipMsg, err = sip.createSIPMessage(transportUDP, pkt.Payload)
+        sipMsg.ts   =pkt.Ts
+        sipMsg.tuple=pkt.Tuple
+        sipMsg.cmdlineTuple=procs.ProcWatcher.FindProcessesTuple(&pkt.Tuple)
+
+        sipMsg.parseSIPHeader()
+    }else{
+        // 続き物
+        fmt.Printf("バッファあるで!\n")
+        sipMsg=buffer.message
+        sipMsg.raw=append(sipMsg.raw,pkt.Payload...)
+        //fmt.Printf("%s\n",string(sipMsg.raw))
+        sipMsg.parseSIPHeader()
+        //return
+    }
+
+    // SIPメッセージがヘッダの途中でフラグメントされていた場合
+    if sipMsg.hdr_end == -1{
+        fmt.Printf("Header fragment")
+        if buffer == nil{
+            buffer = newBuffer(sipMsg.ts, sipTuple, *sipMsg.cmdlineTuple, sipMsg)
+        }
+        sip.addBuffer(sipTuple.hashable(),buffer)
+        return
+
+    // SIPメッセージがボディの途中でフラグメントされていた場合
+    } else if sipMsg.bdy_end == -1{
+        fmt.Printf("Body fragment")
+
+        if buffer == nil{
+            buffer = newBuffer(sipMsg.ts, sipTuple, *sipMsg.cmdlineTuple, sipMsg)
+        }
+        sip.addBuffer(sipTuple.hashable(),buffer)
+        return
+
+    } else {
+    }
+
     if sipMsg.bdy_start < sipMsg.bdy_end {
         sipMsg.parseSIPBody()
     }
 
-    //
-    if sipMsg.bdy_end != -1{
-    }
     fmt.Printf("%s\n",sipMsg)
     _ = err
 
+}
 //    sipPkt, err := decodeSIPData(transportUDP, pkt.Payload)
 //    if err != nil {
 //        // This means that malformed requests or responses are being sent or
@@ -882,7 +866,7 @@ func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
 //    } else /* Query */ {
 //        sip.receivedSIPRequest(&sipTuple, sipMsg)
 //    }
-}
+//}
 // 参考：MemchaceのParseUDP
 // func (mc *memcache) ParseUDP(pkt *protos.Packet) {
 //     defer logp.Recover("ParseMemcache(UDP) exception")

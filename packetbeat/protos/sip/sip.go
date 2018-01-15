@@ -266,6 +266,219 @@ func (msg sipMessage) String() string {
     }
     return outputs
 }
+func (msg *sipMessage) parseSIPHeader(){
+
+    // SIPのヘッダとボディの区切りとそれまでのCRLFで改行が入っている箇所を探す
+    cutPosS := []int{} // SIPメッセージの先頭、またはCRLFの直後のバイト位置
+    cutPosE := []int{} // CRLFの直前のバイト位置
+
+    byte_len := len(msg.raw)
+    hdr_start:=-1       // SIPメッセージの始まり位置を-1で初期化
+    hdr_end  :=byte_len // SIPのボディの終了位置(CRLFCRLF)位置を受け取ったbyte arrayの長さで初期化
+    bdy_start:=byte_len // SIPのボディの終了位置(CRLFCRLF)位置を受け取ったbyte arrayの長さで初期化
+    bdy_end  :=byte_len 
+
+    for i,ch := range msg.raw {
+        //冒頭の\r\nを無視していく
+        if hdr_start == -1 {
+            if ch == byte('\n') || ch == byte('\r') {
+                continue
+            }else{
+                cutPosS = append(cutPosS,i)
+                hdr_start=i
+            }
+        }
+
+        //CRLFの全部の場所を取得
+        if i+1<byte_len &&
+                msg.raw[i+0] == byte('\r') && msg.raw[i+1] == byte('\n'){
+            cutPosE = append(cutPosE,i)
+            cutPosS = append(cutPosS,i+2)
+        }
+        //ヘッダ終了位置の確認
+        if i+3<byte_len &&
+                msg.raw[i+0] == byte('\r') && msg.raw[i+1] == byte('\n') &&
+                msg.raw[i+2] == byte('\r') && msg.raw[i+3] == byte('\n'){
+            hdr_end=i
+            bdy_start=i+4
+            break
+        }
+    }
+    
+    // hdr_startの値を記載
+    msg.hdr_start=hdr_start
+
+    // TODO:ヘッダの終了位置がわからなかった時とかの処理
+    // fragmented packetが入ってきた場合はこっちに来るのでその処理を書かないと・・・
+    if hdr_start < 0 || byte_len <= hdr_end{
+        return
+    }
+    
+    msg.hdr_end  =hdr_end
+    msg.bdy_start=bdy_start
+
+    // 正常系処理
+    // SIP
+    //headers:=map[string][]common.NetString{}
+    headers, first_lines:=msg.parseSIPHeaderToMap(cutPosS,cutPosE)
+
+    // mandatory header fields check
+    to_array         , existTo          := (*headers)["to"          ]
+    from_array       , existFrom        := (*headers)["from"        ]
+    cseq_array       , existCSeq        := (*headers)["cseq"        ]
+    callid_array     , existCallId      := (*headers)["call-id"     ]
+    maxfrowards_array, existMaxForwards := (*headers)["max-forwards"]
+    via_array        , existVia         := (*headers)["via"         ]
+
+    // TODO: 処理をきちんとかく
+    // 必須ヘッダ不足
+    if !(existTo && existFrom && existCSeq && existCallId && existMaxForwards && existVia){
+    }
+
+    msg.to    =getLastElementStrArray(to_array)
+    msg.from  =getLastElementStrArray(from_array)
+    msg.cseq  =getLastElementStrArray(cseq_array)
+    msg.callid=getLastElementStrArray(callid_array)
+
+    msg.headers=headers
+
+    _=maxfrowards_array
+    _=via_array
+
+    // リクエストかレスポンスかを判定
+    msg.isRequest = strings.Contains(first_lines[2],"SIP/2.0")
+    if msg.isRequest {
+        msg.method    =common.NetString(first_lines[0])
+        msg.requestUri=common.NetString(first_lines[1])
+    }else if strings.Contains(first_lines[0],"SIP/2.0") { // Response
+        parsedStatusCode,err := strconv.ParseInt(first_lines[1],10,16)
+        _ = err
+        
+        // TODO:パース失敗時のエラーハンドリングを追加
+        msg.statusCode  =uint16(parsedStatusCode)
+        msg.statusPhrase=common.NetString(first_lines[2])
+    }else{
+        // TODO:Malformed Packets
+        // 何かしらのエラーハンドリングが必要
+    }
+
+    // Content-Lenghtは0でいったん初期化
+    msg.contentlen = 0
+    contenttype_array  , existContentType   := (*headers)["content-type"]
+    contentlength_array, existContentLength := (*headers)["content-length"]
+    _ = contenttype_array
+
+    // TODO: 処理をきちんとかく
+    // ボディがない（または不正な）パターン
+    if !existContentType || !existContentLength{
+        return 
+    }
+
+    contentlength,err := strconv.ParseInt(string(getLastElementStrArray(contentlength_array)),10,64)
+    // TODO:パース失敗時のエラーハンドリングを追加
+    _ =err
+
+    msg.contentlen=int(contentlength)
+    bdy_end=bdy_start+int(contentlength)
+
+    if bdy_end <= byte_len {
+        // TODO:
+        // fragmented packetの場合、未受信部分があるのでバッファリングの処理に入る・・・かな？
+        // とりあえず現状は取れる分だけとっとく。
+        msg.bdy_end=bdy_end
+    }
+
+}
+
+func (msg *sipMessage) parseSIPHeaderToMap(cutPosS []int,cutPosE []int) (*map[string][]common.NetString,[]string) {
+    first_lines:=[]string{}
+    headers:=&map[string][]common.NetString{}
+
+    var lastheader string
+    for i:=0;i<len(cutPosE);i++ {
+        s:=cutPosS[i]
+        e:=cutPosE[i]
+
+        if i==0 { // Requst-line or Status-Lineが入るはず。
+            first_lines=strings.SplitN(string(msg.raw[s:e])," ",3)
+        }else{
+            // 途中で改行された場合の処理(先頭がスペース、またはタブ)
+            // Call-Id: hogehoge--adslfaaiii
+            //  higehige@hogehoge.com
+            // みたいなケース
+            if msg.raw[s] == byte(' ') || msg.raw[s] == byte('\t'){
+                if lastheader!=""{
+                    lastelement:=string(getLastElementStrArray((*headers)[lastheader]))
+                    // TrimSpaceは" "と"\t"の両方削除してくれる
+                    lastelement+=strings.TrimSpace(string(msg.raw[s:e]))
+                }else{
+                    // 当該行を無視する
+                }
+                continue
+            }
+            // 先頭がスペースまたはタブ出ない時はヘッダパラメータのはず
+            header_kv:=strings.SplitN(string(msg.raw[s:e]),":",2)
+            key:=strings.ToLower(strings.TrimSpace(header_kv[0]))
+            val:=strings.TrimSpace(header_kv[1])
+            _,ok := (*headers)[key]
+            if !ok{
+                (*headers)[key]=[]common.NetString{}
+            }
+
+            (*headers)[key]=append((*headers)[key],common.NetString(val))
+            lastheader=key
+        }
+    }
+    return headers, first_lines
+}
+
+func (msg *sipMessage) parseSIPBody(){
+
+    contenttype_array  , _   := (*msg.headers)["content-type"]
+    msg.body=map[string]*map[string][]common.NetString{}
+
+    // bodyの種類により動作を変更する
+    lower_case_content_type:=strings.ToLower(string(getLastElementStrArray(contenttype_array)))
+    switch(lower_case_content_type){
+        case "application/sdp":
+            body,err:=msg.parseBody_SDP(msg.raw[msg.bdy_start:msg.bdy_end])
+            _ = err
+
+            msg.body[lower_case_content_type]=body
+
+        default:
+            fmt.Printf("unspported content-type.\n")
+
+    }
+
+    // TODO: 処理をきちんとかく
+    return 
+}
+
+func (msg sipMessage) parseBody_SDP(rawData []byte) (body *map[string][]common.NetString, err error){
+    body=&map[string][]common.NetString{}
+    sdp_lines:=strings.Split(string(rawData),"\r\n")
+    for i:=0;i<len(sdp_lines);i++{
+
+        key_val:=strings.SplitN(sdp_lines[i],"=",2)
+
+        if len(key_val)!=2{
+            continue
+        }
+
+        key:=strings.TrimSpace(key_val[0])
+        val:=strings.TrimSpace(key_val[1])
+
+        _, existkey:=(*body)[key]
+        if !existkey {
+           (*body)[key]=[]common.NetString{} 
+        }
+        (*body)[key]=append((*body)[key],common.NetString(val))
+    }
+
+    return body, nil
+}
+
 
 
 /**
@@ -625,221 +838,6 @@ func (sip *sipPlugin) createSIPMessage(transp transport, rawData []byte) (msg *s
     return msg, nil
 }
 
-func (sip *sipPlugin) parseSIPHeader(msg *sipMessage){
-
-    // SIPのヘッダとボディの区切りとそれまでのCRLFで改行が入っている箇所を探す
-    cutPosS := []int{} // SIPメッセージの先頭、またはCRLFの直後のバイト位置
-    cutPosE := []int{} // CRLFの直前のバイト位置
-
-    byte_len := len(msg.raw)
-    hdr_start:=-1       // SIPメッセージの始まり位置を-1で初期化
-    hdr_end  :=byte_len // SIPのボディの終了位置(CRLFCRLF)位置を受け取ったbyte arrayの長さで初期化
-    bdy_start:=byte_len // SIPのボディの終了位置(CRLFCRLF)位置を受け取ったbyte arrayの長さで初期化
-    bdy_end  :=byte_len 
-
-    for i,ch := range msg.raw {
-        //冒頭の\r\nを無視していく
-        if hdr_start == -1 {
-            if ch == byte('\n') || ch == byte('\r') {
-                continue
-            }else{
-                cutPosS = append(cutPosS,i)
-                hdr_start=i
-            }
-        }
-
-        //CRLFの全部の場所を取得
-        if i+1<byte_len &&
-                msg.raw[i+0] == byte('\r') && msg.raw[i+1] == byte('\n'){
-            cutPosE = append(cutPosE,i)
-            cutPosS = append(cutPosS,i+2)
-        }
-        //ヘッダ終了位置の確認
-        if i+3<byte_len &&
-                msg.raw[i+0] == byte('\r') && msg.raw[i+1] == byte('\n') &&
-                msg.raw[i+2] == byte('\r') && msg.raw[i+3] == byte('\n'){
-            hdr_end=i
-            bdy_start=i+4
-            break
-        }
-    }
-    
-    // hdr_startの値を記載
-    msg.hdr_start=hdr_start
-
-    // TODO:ヘッダの終了位置がわからなかった時とかの処理
-    // fragmented packetが入ってきた場合はこっちに来るのでその処理を書かないと・・・
-    if hdr_start < 0 || byte_len <= hdr_end{
-        return
-    }
-    
-    msg.hdr_end  =hdr_end
-    msg.bdy_start=bdy_start
-
-    // 正常系処理
-    // SIP
-    //headers:=map[string][]common.NetString{}
-    headers, first_lines:=sip.parseSIPHeaderToMap(msg,cutPosS,cutPosE)
-
-    // mandatory header fields check
-    to_array         , existTo          := (*headers)["to"          ]
-    from_array       , existFrom        := (*headers)["from"        ]
-    cseq_array       , existCSeq        := (*headers)["cseq"        ]
-    callid_array     , existCallId      := (*headers)["call-id"     ]
-    maxfrowards_array, existMaxForwards := (*headers)["max-forwards"]
-    via_array        , existVia         := (*headers)["via"         ]
-
-    // TODO: 処理をきちんとかく
-    // 必須ヘッダ不足
-    if !(existTo && existFrom && existCSeq && existCallId && existMaxForwards && existVia){
-    }
-
-    msg.to    =getLastElementStrArray(to_array)
-    msg.from  =getLastElementStrArray(from_array)
-    msg.cseq  =getLastElementStrArray(cseq_array)
-    msg.callid=getLastElementStrArray(callid_array)
-
-    msg.headers=headers
-
-    _=maxfrowards_array
-    _=via_array
-
-    // リクエストかレスポンスかを判定
-    msg.isRequest = strings.Contains(first_lines[2],"SIP/2.0")
-    if msg.isRequest {
-        msg.method    =common.NetString(first_lines[0])
-        msg.requestUri=common.NetString(first_lines[1])
-    }else if strings.Contains(first_lines[0],"SIP/2.0") { // Response
-        parsedStatusCode,err := strconv.ParseInt(first_lines[1],10,16)
-        _ = err
-        
-        // TODO:パース失敗時のエラーハンドリングを追加
-        msg.statusCode  =uint16(parsedStatusCode)
-        msg.statusPhrase=common.NetString(first_lines[2])
-    }else{
-        // TODO:Malformed Packets
-        // 何かしらのエラーハンドリングが必要
-    }
-
-    // Content-Lenghtは0でいったん初期化
-    msg.contentlen = 0
-    contenttype_array  , existContentType   := (*headers)["content-type"]
-    contentlength_array, existContentLength := (*headers)["content-length"]
-    _ = contenttype_array
-
-    // TODO: 処理をきちんとかく
-    // ボディがない（または不正な）パターン
-    if !existContentType || !existContentLength{
-        return 
-    }
-
-    contentlength,err := strconv.ParseInt(string(getLastElementStrArray(contentlength_array)),10,64)
-    // TODO:パース失敗時のエラーハンドリングを追加
-    _ =err
-
-    msg.contentlen=int(contentlength)
-    bdy_end=bdy_start+int(contentlength)
-
-    if bdy_end <= byte_len {
-        // TODO:
-        // fragmented packetの場合、未受信部分があるのでバッファリングの処理に入る・・・かな？
-        // とりあえず現状は取れる分だけとっとく。
-        msg.bdy_end=bdy_end
-    }
-
-}
-
-func (sip *sipPlugin) parseSIPHeaderToMap(msg *sipMessage,cutPosS []int,cutPosE []int) (*map[string][]common.NetString,[]string) {
-    first_lines:=[]string{}
-    headers:=&map[string][]common.NetString{}
-
-    var lastheader string
-    for i:=0;i<len(cutPosE);i++ {
-        s:=cutPosS[i]
-        e:=cutPosE[i]
-
-        if i==0 { // Requst-line or Status-Lineが入るはず。
-            first_lines=strings.SplitN(string(msg.raw[s:e])," ",3)
-        }else{
-            // 途中で改行された場合の処理(先頭がスペース、またはタブ)
-            // Call-Id: hogehoge--adslfaaiii
-            //  higehige@hogehoge.com
-            // みたいなケース
-            if msg.raw[s] == byte(' ') || msg.raw[s] == byte('\t'){
-                if lastheader!=""{
-                    lastelement:=string(getLastElementStrArray((*headers)[lastheader]))
-                    // TrimSpaceは" "と"\t"の両方削除してくれる
-                    lastelement+=strings.TrimSpace(string(msg.raw[s:e]))
-                }else{
-                    // 当該行を無視する
-                }
-                continue
-            }
-            // 先頭がスペースまたはタブ出ない時はヘッダパラメータのはず
-            header_kv:=strings.SplitN(string(msg.raw[s:e]),":",2)
-            key:=strings.ToLower(strings.TrimSpace(header_kv[0]))
-            val:=strings.TrimSpace(header_kv[1])
-            _,ok := (*headers)[key]
-            if !ok{
-                (*headers)[key]=[]common.NetString{}
-            }
-
-            (*headers)[key]=append((*headers)[key],common.NetString(val))
-            lastheader=key
-        }
-    }
-    return headers, first_lines
-}
-
-func (sip *sipPlugin) parseSIPBody(msg *sipMessage){
-
-    contenttype_array  , _   := (*msg.headers)["content-type"]
-    msg.body=map[string]*map[string][]common.NetString{}
-
-    // bodyの種類により動作を変更する
-    lower_case_content_type:=strings.ToLower(string(getLastElementStrArray(contenttype_array)))
-    switch(lower_case_content_type){
-        case "application/sdp":
-            body,err:=sip.parseBody_SDP(msg.raw[msg.bdy_start:msg.bdy_end])
-            _ = err
-
-            msg.body[lower_case_content_type]=body
-            
-
-        default:
-            fmt.Printf("unspported content-type.\n")
-
-    }
-
-    // TODO: 処理をきちんとかく
-    return 
-}
-
-func (sip *sipPlugin) parseBody_SDP(rawData []byte) (body *map[string][]common.NetString, err error){
-    body=&map[string][]common.NetString{}
-    sdp_lines:=strings.Split(string(rawData),"\r\n")
-    for i:=0;i<len(sdp_lines);i++{
-        
-
-        key_val:=strings.SplitN(sdp_lines[i],"=",2)
-
-        if len(key_val)!=2{
-            continue
-        }
-
-        key:=strings.TrimSpace(key_val[0])
-        val:=strings.TrimSpace(key_val[1])
-
-        _, existkey:=(*body)[key]
-        if !existkey {
-           (*body)[key]=[]common.NetString{} 
-        }
-        (*body)[key]=append((*body)[key],common.NetString(val))
-    }
-
-    return body, nil
-}
-
 
 // udpパケットで呼ばれた際のパース
 func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
@@ -850,9 +848,9 @@ func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
         pkt.Tuple.String(), packetSize)
 
     sipMsg, err:= sip.createSIPMessage(transportUDP, pkt.Payload)
-    sip.parseSIPHeader(sipMsg)
+    sipMsg.parseSIPHeader()
     if sipMsg.bdy_start < sipMsg.bdy_end {
-        sip.parseSIPBody(sipMsg)
+        sipMsg.parseSIPBody()
     }
 
     //

@@ -3,10 +3,7 @@
 package sip
 
 import (
-/*    "bytes" */
     "net"
-/*    "regexp"
-    "strings"*/
     "testing"
     "time"
 
@@ -231,10 +228,7 @@ func newSIP(store *eventStore, verbose bool) *sipPlugin {
 
     cfg, _ := common.NewConfigFrom(map[string]interface{}{
         "ports":               []int{serverPort},
-        "include_authorities": true,
-        "include_additionals": true,
-        "send_request":        true,
-        "send_response":       true,
+        "buffer_timeout":      5 * time.Second,
     })
     sip, err := New(false, callback, cfg)
     if err != nil {

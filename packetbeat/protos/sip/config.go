@@ -1,20 +1,19 @@
 package sip
 
 import (
+    "time"
 	"github.com/elastic/beats/packetbeat/config"
-	"github.com/elastic/beats/packetbeat/protos"
 )
 
 type sipConfig struct {
 	config.ProtocolCommon `config:",inline"`
-	IncludeAuthorities    bool `config:"include_authorities"`
-	IncludeAdditionals    bool `config:"include_additionals"`
+    BufferTimeout         time.Duration `config:"buffer_timeout"`
 }
 
 var (
 	defaultConfig = sipConfig{
 		ProtocolCommon: config.ProtocolCommon{
-			TransactionTimeout: protos.DefaultTransactionExpiration,
+//			TransactionTimeout: protos.DefaultTransactionExpiration,
 		},
 	}
 )

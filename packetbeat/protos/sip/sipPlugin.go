@@ -111,21 +111,22 @@ func (sip *sipPlugin) publishBuffer(msg *sipMessage) {
     fields := common.MapStr{}
     fields["type"] = "sip"
     fields["transport"] = msg.transport.String()
+    fields["raw"] = string(msg.raw)
     fields["src"] = fmt.Sprintf("%s:%d",msg.tuple.SrcIP,msg.tuple.SrcPort)
     fields["dst"] = fmt.Sprintf("%s:%d",msg.tuple.DstIP,msg.tuple.DstPort)
 
     if msg.isRequest {
-        fields["method"     ] = msg.method
-        fields["request_uri"] = msg.requestUri
+        fields["method"     ] = fmt.Sprintf("%s",msg.method)
+        fields["request_uri"] = fmt.Sprintf("%s",msg.requestUri)
     }else{
-        fields["status_code"  ] = msg.statusCode
-        fields["status_phrase"] = msg.statusPhrase
+        fields["status_code"  ] = int(msg.statusCode)
+        fields["status_phrase"] = fmt.Sprintf("%s",msg.statusPhrase)
     }
 
-    fields["from"   ] = msg.from
-    fields["to"     ] = msg.to
-    fields["cseq"   ] = msg.cseq
-    fields["call_id"] = msg.callid
+    fields["from"   ] = fmt.Sprintf("%s",msg.from)
+    fields["to"     ] = fmt.Sprintf("%s",msg.to)
+    fields["cseq"   ] = fmt.Sprintf("%s",msg.cseq)
+    fields["call_id"] = fmt.Sprintf("%s",msg.callid)
 
     sipHeaders := common.MapStr{}
     fields["headers"] = sipHeaders

@@ -188,11 +188,11 @@ func (msg *sipMessage) parseSIPHeader() (err error){
     }else if strings.Contains(first_lines[0],"SIP/2.0") { // Response
         parsedStatusCode,err := strconv.ParseInt(first_lines[1],10,16)
         if err !=nil {
-            msg.statusCode  =uint16(parsedStatusCode)
-            msg.statusPhrase=common.NetString(first_lines[2])
-        }else{
             msg.statusCode  =uint16(999)
             msg.statusPhrase=common.NetString("Unknown Status")
+        }else{
+            msg.statusCode  =uint16(parsedStatusCode)
+            msg.statusPhrase=common.NetString(first_lines[2])
         }
     }else{
         // TODO:Malformed Packets
@@ -240,6 +240,52 @@ func (msg *sipMessage) parseSIPHeader() (err error){
     return nil
 }
 
+func (msg *sipMessage) separateCsv(commaseparatedString string) (separatedStrings *[]common.NetString){
+    separatedStrings = &[]common.NetString{}
+    var prevChar rune
+    startIdx:=0
+    insubcsv:=false
+    escaped:=false
+    for idx,curChar := range commaseparatedString{
+        /*
+        time|01234567
+      ------+--------
+        char| \\"\\\"
+      ------+--------
+      x=!esc| TFTTFTF
+      y=c==\| TTFTTTF
+      ------+--------
+        x&&y|FTFFTFTF
+        */
+        escaped=(!escaped && prevChar == '\\')
+        finalChr :=(idx+1 == len(commaseparatedString))
+        isComma:=(curChar == ',')
+
+        if curChar == '"' && !escaped{
+            insubcsv=!insubcsv
+        }
+
+        if finalChr {
+            if isComma{ 
+                subStr:=strings.TrimSpace(commaseparatedString[startIdx:idx])
+                *separatedStrings=append(*separatedStrings,common.NetString(subStr))
+                *separatedStrings=append(*separatedStrings,common.NetString(""))
+            }else{
+                subStr:=strings.TrimSpace(commaseparatedString[startIdx:idx+1])
+                *separatedStrings=append(*separatedStrings,common.NetString(subStr))
+            }
+        } else if !insubcsv && (!escaped && isComma){
+            subStr:=strings.TrimSpace(commaseparatedString[startIdx:idx])
+            *separatedStrings=append(*separatedStrings,common.NetString(subStr))
+
+            startIdx=idx+1
+        }
+        prevChar=curChar
+    }
+
+    return separatedStrings
+}
+
 func (msg *sipMessage) parseSIPHeaderToMap(cutPosS []int,cutPosE []int) (*map[string][]common.NetString,[]string) {
     first_lines:=[]string{}
     headers:=&map[string][]common.NetString{}
@@ -260,16 +306,44 @@ func (msg *sipMessage) parseSIPHeaderToMap(cutPosS []int,cutPosE []int) (*map[st
                 if lastheader!=""{
                     lastelement:=string(getLastElementStrArray((*headers)[lastheader]))
                     // TrimSpaceは" "と"\t"の両方削除してくれる
-                    lastelement+=strings.TrimSpace(string(msg.raw[s:e]))
+                    lastelement+=fmt.Sprintf(" %s",strings.TrimSpace(string(msg.raw[s:e])))
                 }else{
                     // 当該行を無視する
                 }
                 continue
             }
+
+            // 前回処理した場所は改行箇所であった部分で,区切りを探す
+            if lastheader!=""{
+            //    fmt.Printf("-- %s\n",(*headers)[lastheader])
+            //    lastHeaderArray:=(*headers)[lastheader]
+            //    lastHeaderEndIdx:=len((*headers)[lastheader])-1
+            //    if lastHeaderEndIdx <= 0 {continue} // ないはずだけど・・・
+
+            //    lastElement:=string(getLastElementStrArray((*headers)[lastheader]))
+            //    separatedStrings:=msg.separateCsv(lastElement)
+            //    for idx,element := range *separatedStrings {
+            //        if idx == 0{
+            //            lastHeaderArray[lastHeaderEndIdx]=element
+            //        }else{
+            //            lastHeaderArray=append(lastHeaderArray,element)
+            //        }
+            //    }
+            //    fmt.Printf("** %s\n",(*headers)[lastheader])
+            }
+
+
             // 先頭がスペースまたはタブ出ない時はヘッダパラメータのはず
             header_kv:=strings.SplitN(string(msg.raw[s:e]),":",2)
             key:=strings.ToLower(strings.TrimSpace(header_kv[0]))
             val:=strings.TrimSpace(header_kv[1])
+
+            // 分割の結果:が含まれていない場合
+            if val == ""{
+                continue
+            }
+
+            // 初登場のヘッダの場合はマップを初期化
             _,ok := (*headers)[key]
             if !ok{
                 (*headers)[key]=[]common.NetString{}
@@ -277,6 +351,10 @@ func (msg *sipMessage) parseSIPHeaderToMap(cutPosS []int,cutPosE []int) (*map[st
 
             (*headers)[key]=append((*headers)[key],common.NetString(val))
             lastheader=key
+        }
+        // 最終要素でもカンマ区切りを探す
+        if lastheader!=""{
+
         }
     }
     return headers, first_lines

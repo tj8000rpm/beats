@@ -10,7 +10,7 @@
 
 ```yaml
 fields :
-  type:sip
+  type: sip
   transport: udp or tcp
   src: SrcIP:SrcPort
   dst: DstIP:DstPort
@@ -52,6 +52,8 @@ no supported yet.
 
 #### TODO
 
+* SIPカンマ区切りのものを複数に分割する
+* Content-encodeの場合をどうするか
 * TCPは後回しとする
 * テストケースを作る
 * その他いろいろ思いついたら追記する

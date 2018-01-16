@@ -2072,3 +2072,84 @@
                   type: keyword
                   description: >
                     The JA3 string used to calculate the hash.
+- key: sip
+  title: "SIP"
+  description: SIP-specific event fields.
+  fields:
+    - name: sip
+      type: group
+      description: Information about the SIP request or response.
+      fields:
+        #in case Request
+        - name: method
+          type: keyword
+          description: >
+            SIP Request Method
+          example: INVITE
+
+        - name: request_uri
+          type: keyword
+          description: >
+            SIP Request URI
+          example: sip:hoge@example.com:5060;transport=udp
+
+        # in case Response
+        - name: status_code
+          type: long
+          description: >
+            SIP Response code, status code
+          example: 200
+
+        - name: status_phrase
+          type: keyword
+          description: >
+            SIP Response , status phrase
+          example: OK
+
+        # mandatory headers
+        - name: from
+          type: keyword
+          description: >
+            SIP From header value
+          example: "\"sipp\" <sip:sipp@10.0.0.1>;tag=2363SIPpTag001"
+
+        - name: to
+          type: keyword
+          description: >
+            SIP To header value
+          example: "\"sut\" <sip:6505550252@192.168.0.1>;tag=16489SIPpTag012"
+
+        - name: call_id
+          type: keyword
+          description: >
+            SIP Call-ID header value
+          example: ""
+
+        - name: cseq
+          type: keyword
+          description: >
+            SIP CSeq header value
+          example: 1 INVITE
+
+        # SIP specified message
+        - name: headers
+          type: group
+          description: >
+            SIP all received headers map[headername]array
+          fields:
+            - name: fields
+              type: array
+              description: >
+                SIP header-fields
+
+        - name: body
+          type: group
+          description: The body of the SIP message.
+          fields:
+            - name: content_type
+              type: group
+              fields:
+                - name: fields
+                  type: array
+                  description: >
+                    SIP body_kv  values

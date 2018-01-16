@@ -91,7 +91,7 @@ func (sip *sipPlugin) deleteBuffer(k hashableSIPTuple) *sipBuffer {
 func (sip *sipPlugin) expireBuffer(t *sipBuffer) {
     //t.notes = append(t.notes, "noResponse.Error()")
     debugf("%s %s", "bufferTimeout.Error()", t.tuple.String())
-    sip.publishBuffer(t.message)
+    sip.publishMessage(t.message)
     unmatchedRequests.Add(1)
 }
 
@@ -99,8 +99,8 @@ func (sip *sipPlugin) ConnectionTimeout() time.Duration {
     return sip.fragmentBufferTimeout
 }
 
-// publishBufferはsipMessageをjsonとしてプッシュするように整形する
-func (sip *sipPlugin) publishBuffer(msg *sipMessage) {
+// publishMessageはsipMessageをjsonとしてプッシュするように整形する
+func (sip *sipPlugin) publishMessage(msg *sipMessage) {
     if sip.results == nil {
         return
     }
@@ -269,8 +269,6 @@ func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
         sipMsg.parseSIPBody()
     }
 
-    sip.publishBuffer(sipMsg)
-
-
+    sip.publishMessage(sipMsg)
 }
 

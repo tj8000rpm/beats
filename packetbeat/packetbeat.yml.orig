@@ -98,11 +98,6 @@ packetbeat.protocols:
   # the TLS protocol by commenting out the list of ports.
   ports: [443]
 
-- type: sip
-  # Configure the ports where to listen for TLS traffic. You can disable
-  # the TLS protocol by commenting out the list of ports.
-  ports: [5060]
-
 #==================== Elasticsearch template setting ==========================
 
 setup.template.settings:
@@ -202,18 +197,3 @@ output.elasticsearch:
 # To enable all selectors use ["*"]. Examples of other selectors are "beat",
 # "publish", "service".
 #logging.selectors: ["*"]
-
-#============================== Xpack Monitoring ===============================
-# packetbeat can export internal metrics to a central Elasticsearch monitoring
-# cluster.  This requires xpack monitoring to be enabled in Elasticsearch.  The
-# reporting is disabled by default.
-
-# Set to true to enable the monitoring reporter.
-#xpack.monitoring.enabled: false
-
-# Uncomment to send the metrics to Elasticsearch. Most settings from the
-# Elasticsearch output are accepted here as well. Any setting that is not set is
-# automatically inherited from the Elasticsearch output configuration, so if you
-# have the Elasticsearch output configured, you can simply uncomment the
-# following line.
-#xpack.monitoring.elasticsearch:

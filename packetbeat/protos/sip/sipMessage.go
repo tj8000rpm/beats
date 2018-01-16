@@ -240,25 +240,46 @@ func (msg *sipMessage) parseSIPHeader() (err error){
     return nil
 }
 
-func (msg *sipMessage) separateCsv(commaseparatedString string) (separatedStrings *[]common.NetString){
+/**
+ * commaSeparatedStringに指定された文字列（カンマ区切り）を,位置で区切り、
+ * 区切った後の文字列の前後のスペースを排除したNetStringの配列に変更する
+ *
+ * example:
+ * commaSeparatedString : ,aaaa,"bbbb,ccc",hoge\,hige,\"aa,aa\",
+ * separatedStrings : 
+ *   -            // カンマで始まっている部分は前に空文字を追加する
+ *   - aaaa
+ *   -"bbbb,cccc" // "で区切られた部分はセパレートしない
+ *   - hoge\,hige // エスケープされた,はセパレートしない
+ *   - \"aa       // エスケープされた"で区切られた部分はセパレートする
+ *   - aa\"       // 同上
+ *   -            // カンマで終わっている部分は後ろに空文字を追加する
+ *
+ *  example2:
+ *  commaSeparatedString : aaaa,"aaaaa,bbb
+ *  separatedStrings :
+ *    - aaaa
+ *    - "aaaaa,bbb  //エスケープされたとちゅうデモ書き出し
+ **/
+func (msg *sipMessage) separateCsv(commaSeparatedString string) (separatedStrings *[]common.NetString){
     separatedStrings = &[]common.NetString{}
     var prevChar rune
     startIdx:=0
     insubcsv:=false
     escaped:=false
-    for idx,curChar := range commaseparatedString{
-        /*
-        time|01234567
-      ------+--------
-        char| \\"\\\"
-      ------+--------
-      x=!esc| TFTTFTF
-      y=c==\| TTFTTTF
-      ------+--------
-        x&&y|FTFFTFTF
+    for idx,curChar := range commaSeparatedString{
+        /* escaped boolの動き
+         *   time|01234567
+         * ------+--------
+         *   char| \\"\\\"
+         * ------+--------
+         * x=!esc| TFTTFTF //
+         * y=c==\| TTFTTTF // prevChar==\\の結果
+         * ------+--------
+         *   x&&y|FTFFTFTF // escaped boolの計算結果
         */
         escaped=(!escaped && prevChar == '\\')
-        finalChr :=(idx+1 == len(commaseparatedString))
+        finalChr :=(idx+1 == len(commaSeparatedString))
         isComma:=(curChar == ',')
 
         if curChar == '"' && !escaped{
@@ -266,17 +287,17 @@ func (msg *sipMessage) separateCsv(commaseparatedString string) (separatedString
         }
 
         if finalChr {
-            if isComma{ 
-                subStr:=strings.TrimSpace(commaseparatedString[startIdx:idx])
-                *separatedStrings=append(*separatedStrings,common.NetString(subStr))
-                *separatedStrings=append(*separatedStrings,common.NetString(""))
+            if isComma && !insubcsv { 
+                subStr:=strings.TrimSpace(commaSeparatedString[startIdx:idx])
+                *separatedStrings=append(*separatedStrings, common.NetString(subStr))
+                *separatedStrings=append(*separatedStrings, common.NetString(""))
             }else{
-                subStr:=strings.TrimSpace(commaseparatedString[startIdx:idx+1])
-                *separatedStrings=append(*separatedStrings,common.NetString(subStr))
+                subStr:=strings.TrimSpace(commaSeparatedString[startIdx:idx+1])
+                *separatedStrings=append(*separatedStrings, common.NetString(subStr))
             }
         } else if !insubcsv && (!escaped && isComma){
-            subStr:=strings.TrimSpace(commaseparatedString[startIdx:idx])
-            *separatedStrings=append(*separatedStrings,common.NetString(subStr))
+            subStr:=strings.TrimSpace(commaSeparatedString[startIdx:idx])
+            *separatedStrings=append(*separatedStrings, common.NetString(subStr))
 
             startIdx=idx+1
         }
@@ -315,23 +336,19 @@ func (msg *sipMessage) parseSIPHeaderToMap(cutPosS []int,cutPosE []int) (*map[st
 
             // 前回処理した場所は改行箇所であった部分で,区切りを探す
             if lastheader!=""{
-            //    fmt.Printf("-- %s\n",(*headers)[lastheader])
-            //    lastHeaderArray:=(*headers)[lastheader]
-            //    lastHeaderEndIdx:=len((*headers)[lastheader])-1
-            //    if lastHeaderEndIdx <= 0 {continue} // ないはずだけど・・・
+                lastHeaderEndIdx:=len((*headers)[lastheader])-1
+                if lastHeaderEndIdx < 0 {continue} // ないはずだけど・・・
 
-            //    lastElement:=string(getLastElementStrArray((*headers)[lastheader]))
-            //    separatedStrings:=msg.separateCsv(lastElement)
-            //    for idx,element := range *separatedStrings {
-            //        if idx == 0{
-            //            lastHeaderArray[lastHeaderEndIdx]=element
-            //        }else{
-            //            lastHeaderArray=append(lastHeaderArray,element)
-            //        }
-            //    }
-            //    fmt.Printf("** %s\n",(*headers)[lastheader])
+                lastElement:=string(getLastElementStrArray((*headers)[lastheader]))
+                separatedStrings:=msg.separateCsv(lastElement)
+                for idx,element := range *separatedStrings {
+                    if idx == 0{
+                        (*headers)[lastheader][lastHeaderEndIdx]=element
+                    }else{
+                        (*headers)[lastheader]=append((*headers)[lastheader],element)
+                    }
+                }
             }
-
 
             // 先頭がスペースまたはタブ出ない時はヘッダパラメータのはず
             header_kv:=strings.SplitN(string(msg.raw[s:e]),":",2)

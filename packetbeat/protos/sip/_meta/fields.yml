@@ -2,80 +2,81 @@
   title: "SIP"
   description: SIP-specific event fields.
   fields:
-    - name: sip
-      type: group
-      description: Information about the SIP request or response.
-      fields:
-        #in case Request
-        - name: method
-          type: keyword
-          description: >
-            SIP Request Method
-          example: INVITE
+    # general
+    - name: type
+      type: keyword
+      description: >
+        Must be 'sip'
 
-        - name: request_uri
-          type: keyword
-          description: >
-            SIP Request URI
-          example: sip:hoge@example.com:5060;transport=udp
+    - name: "@timestamp"
+      type: date
 
-        # in case Response
-        - name: status_code
-          type: long
-          description: >
-            SIP Response code, status code
-          example: 200
+    # general
+    - name: sip.src
+      type: keyword
+      description: >
+        Source IP address and port
+      example: 192.168.0.1:5060
 
-        - name: status_phrase
-          type: keyword
-          description: >
-            SIP Response , status phrase
-          example: OK
+    - name: sip.dst
+      type: keyword
+      description: >
+        Destination IP address and port
+      example: 192.168.0.1:5060
 
-        # mandatory headers
-        - name: from
-          type: keyword
-          description: >
-            SIP From header value
-          example: "\"sipp\" <sip:sipp@10.0.0.1>;tag=2363SIPpTag001"
+    - name: sip.unixtimenano
+      type: long
+      description: >
+        unixtime as nanosec
+      example: 1516199666016756000
 
-        - name: to
-          type: keyword
-          description: >
-            SIP To header value
-          example: "\"sut\" <sip:6505550252@192.168.0.1>;tag=16489SIPpTag012"
+     #in case Request
+    - name: sip.method
+      type: keyword
+      description: >
+        SIP Request Method
+      example: INVITE
 
-        - name: call_id
-          type: keyword
-          description: >
-            SIP Call-ID header value
-          example: ""
+    - name: sip.request-uri
+      type: keyword
+      description: >
+        SIP Request URI
+      example: sip:hoge@example.com:5060;transport=udp
 
-        - name: cseq
-          type: keyword
-          description: >
-            SIP CSeq header value
-          example: 1 INVITE
+    # in case Response
+    - name: sip.status-code
+      type: long
+      description: >
+        SIP Response code, status code
+      example: 200
 
-        # SIP specified message
-        - name: headers
-          type: group
-          description: >
-            SIP all received headers map[headername]array
-          fields:
-            - name: fields
-              type: array
-              description: >
-                SIP header-fields
+    - name: sip.status-phrase
+      type: keyword
+      description: >
+        SIP Response , status phrase
+      example: OK
 
-        - name: body
-          type: group
-          description: The body of the SIP message.
-          fields:
-            - name: content_type
-              type: group
-              fields:
-                - name: fields
-                  type: array
-                  description: >
-                    SIP body_kv  values
+    # mandatory headers
+    - name: sip.from
+      type: keyword
+      description: >
+        SIP From header value
+      example: "\"sipp\" <sip:sipp@10.0.0.1>;tag=2363SIPpTag001"
+
+    - name: sip.to
+      type: keyword
+      description: >
+        SIP To header value
+      example: "\"sut\" <sip:6505550252@192.168.0.1>;tag=16489SIPpTag012"
+
+    - name: sip.call-id
+      type: keyword
+      description: >
+        SIP Call-ID header value
+      example: ""
+
+    - name: sip.cseq
+      type: keyword
+      description: >
+        SIP CSeq header value
+      example: 1 INVITE

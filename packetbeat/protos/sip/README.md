@@ -1,13 +1,32 @@
-#### 実装方針
-- SIPは呼の長さがいくつになるかわからないため、
-  call単位でのまとめ(例えばFinal Responseがなんであったのかや応答時間など)
-  は求めず、リクエスト、またはレスポンスいそれぞれを
-  一つのメッセージとし、メッセージの受信が完了した時点で
-  パケットキャプチャの結果として書き出すこととする。
-- CallごとのシーケンスなどはElasticsearch側で工夫してもらうものとする
+### Implementation plan
 
-- キャプチャ結果には以下を含む
+#### Published for each SIP message(request or response)
+- SIP is not a one to one message with request and response. Also order to each message is not determined(a response may be sent after previous response).
+- Therefore the SIP response and SIP request is published when packetbeat received the message immidiatory.
+- If you need all SIP messages in throughout of SIP dialog, you need to retrieve from Elasticsearch using the SIP Call-ID field etc.
 
+#### Additional timestamp
+- Default timestamp field(@timestamp) precision is not sufficient(the sip response is often send immediately when request received eg. 100 Trying).
+- Therefore ``sip.unixtimenano``(int64) is added to keep the message order.
+
+#### Request-Line,Status-Line
+- In case of SIP request received, stored ``sip.method``(eg.INVITE,BYE,ACK,PRACK) and ``sip.request-uri``.
+- In case of SIP response received, stored ``sip.status-code``(eg.200,404) and ``sip.status-phrase``(eg. OK, Ringing)
+
+#### Mandatory headers
+- ``sip.from``,``sip.to``,``sip.call-id``,``sip.cseq`` are SIP mandatory headers.
+
+#### SIP Headers
+- A SIP header might be exsist multiple lines(eg. Via).
+- The description order of the SIP header has a meaning.
+- Each SIP header is sotred as dict and thi dict has header values as array.
+
+#### SIP Body
+- SIP allowed having mulitple type of body.
+- Currently it only supports sdp
+
+#### Raw message
+- Recived raw message is stored in ``raw`` field as text value.
 
 #### Sample JSON Output
 ```json
@@ -80,8 +99,8 @@
          ]
        }
      },
-     "sip.request_uri": "sip:service@127.0.0.1:5060",
-     "sip.call_id": "3138-26730@192.168.0.220",
+     "sip.request-uri": "sip:service@127.0.0.1:5060",
+     "sip.call-id": "3138-26730@192.168.0.220",
      "sip.cseq": "1 INVITE",
      "sip.dst": "127.0.0.1:5060",
      "sip.unixtimenano": 1516199666016756000,
@@ -118,17 +137,14 @@ a=rtpmap:0 PCMU/8000
 ```
 
 #### UDP
-
-
+* supported fragmented packets
 
 #### TCP
-
-no supported yet.
+* ``transport=tcp`` is not supported yet.
 
 #### TODO
-
-* SIPカンマ区切りのものを複数に分割する
 * Content-encodeの場合をどうするか
 * TCPは後回しとする
 * テストケースを作る
 * その他いろいろ思いついたら追記する
+

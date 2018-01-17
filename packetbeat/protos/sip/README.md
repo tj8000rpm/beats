@@ -8,38 +8,113 @@
 
 - キャプチャ結果には以下を含む
 
-```yaml
-fields :
-  type: sip
-  transport: udp or tcp
-  src: SrcIP:SrcPort
-  dst: DstIP:DstPort
 
-  method: INVITE,ACK,BYE,etc... // only request msg.
-  request_uri: <sip:example@example.com:5060> // only requst msg.
+#### Sample JSON Output
+```json
+{
+   "_index": "packetbeat-7.0.0-alpha1-2018.01.17",
+   "_type": "doc",
+   "_id": "14uKBGEBLUdHmvOi5U1L",
+   "_score": null,
+   "_source": {
+     "@timestamp": "2018-01-17T14:34:26.016Z",
+     "beat": {
+       "name": "Elasticsearch1",
+       "hostname": "Elasticsearch1",
+       "version": "7.0.0-alpha1"
+     },
+     "sip.headers": {
+       "from": [
+         "sipp <sip:sipp@192.168.0.220:5060>;tag=26730SIPpTag003138"
+       ],
+       "to": [
+         "service <sip:service@127.0.0.1:5060>"
+       ],
+       "cseq": [
+         "1 INVITE"
+       ],
+       "subject": [
+         "Performance Test"
+       ],
+       "contact": [
+         "sip:sipp@192.168.0.220:5060"
+       ],
+       "content-type": [
+         "application/sdp"
+       ],
+       "call-id": [
+         "3138-26730@192.168.0.220"
+       ],
+       "content-length": [
+         "137"
+       ],
+       "via": [
+         "SIP/2.0/UDP 192.168.0.220:5060;branch=z9hG4bK-26730-3138-0"
+       ],
+       "max-forwards": [
+         "70"
+       ]
+     },
+     "sip.body": {
+       "application/sdp": {
+         "o": [
+           "user1 53655765 2353687637 IN IP4 192.168.0.220"
+         ],
+         "s": [
+           "-"
+         ],
+         "c": [
+           "IN IP4 192.168.0.220"
+         ],
+         "t": [
+           "0 0"
+         ],
+         "m": [
+           "audio 6000 RTP/AVP 0"
+         ],
+         "a": [
+           "rtpmap:0 PCMU/8000"
+         ],
+         "v": [
+           "0"
+         ]
+       }
+     },
+     "sip.request_uri": "sip:service@127.0.0.1:5060",
+     "sip.call_id": "3138-26730@192.168.0.220",
+     "sip.cseq": "1 INVITE",
+     "sip.dst": "127.0.0.1:5060",
+     "sip.unixtimenano": 1516199666016756000,
+     "type": "sip",
+     "sip.method": "INVITE",
+     "sip.from": "sipp <sip:sipp@192.168.0.220:5060>;tag=26730SIPpTag003138",
+     "sip.to": "service <sip:service@127.0.0.1:5060>",
+     "sip.raw": """
+INVITE sip:service@127.0.0.1:5060 SIP/2.0
+Via: SIP/2.0/UDP 192.168.0.220:5060;branch=z9hG4bK-26730-3138-0
+From: sipp <sip:sipp@192.168.0.220:5060>;tag=26730SIPpTag003138
+To: service <sip:service@127.0.0.1:5060>
+Call-ID: 3138-26730@192.168.0.220
+CSeq: 1 INVITE
+Contact: sip:sipp@192.168.0.220:5060
+Max-Forwards: 70
+Subject: Performance Test
+Content-Type: application/sdp
+Content-Length:   137
 
-  status_code: 200,180,100,etc... // only response msg.
-  status_phrase: OK,Ringing,etc... // only response msg.
+v=0
+o=user1 53655765 2353687637 IN IP4 192.168.0.220
+s=-
+c=IN IP4 192.168.0.220
+t=0 0
+m=audio 6000 RTP/AVP 0
+a=rtpmap:0 PCMU/8000
 
-  from: mandatoryHeader
-  to: mandatoryHeader
-  cseq: mandatoryHeader
-  call_id: mandatoryHeader
-
-  headers: // all header include
-    via:
-     - Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK1701109339
-     - Via: SIP/2.0/UDP 10.0.0.2:5060;branch=z9hG4bK2312101233
-    content-type:
-     - application/sdp
-    // etc...
-
-  body: // all body include(if supporte)
-    application/sdp:
-      a:
-        - rtpmap:0 PCMU/8000
-        - rtpmap:18 G729/8000
-    // etc...
+""",
+    "sip.src": "192.168.0.220:5060",
+    "sip.transport": "udp"
+  }
+}
 ```
 
 #### UDP

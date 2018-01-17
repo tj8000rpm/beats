@@ -206,31 +206,31 @@ func TestParseUdp_responsePacketWithSDP(t *testing.T){
     assert.Equal(t, 1, store.size(), "There should be one message published.")
     if store.size() == 1{
         fields:=store.events[0].Fields
-        headers,_:=fields["headers"].(common.MapStr)
-        // body:=fields["body"]
+        headers,_:=fields["sip.headers"].(common.MapStr)
+        // body:=fields["sip.body"]
         // mandatories
         assert.Equal(t, "Session Progess",
-                        fields["status_phrase"], 
+                        fields["sip.status_phrase"], 
                         "There should be [Session Progress].")
 
         assert.Equal(t, 183, 
-                        fields["status_code"], 
+                        fields["sip.status_code"], 
                         "There should be 183.")
 
         assert.Equal(t, "1-2363@10.0.0.1" ,
-                        fields["call_id"], 
+                        fields["sip.call_id"], 
                         "There should be [1-2363@10.0.0.1].")
 
         assert.Equal(t, "\"sipp\" <sip:sipp@10.0.0.1>;tag=2363SIPpTag001",
-                        fields["from"], 
+                        fields["sip.from"], 
                         "There should be [\"sipp\" <sip:sipp@10.0.0.1>;tag=2363SIPpTag001].")
 
         assert.Equal(t, "\"sut\" <sip:6505550252@192.168.0.1>;tag=16489SIPpTag012",
-                        fields["to"],
+                        fields["sip.to"],
                         "There should be [\"sut\" <sip:6505550252@192.168.0.1>;tag=16489SIPpTag012].")
 
         assert.Equal(t, "1 INVITE",
-                        fields["cseq"],
+                        fields["sip.cseq"],
                         "There should be [1 INVITE].")
         // headers
         assert.Equal(t, "application/sdp",

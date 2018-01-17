@@ -109,27 +109,28 @@ func (sip *sipPlugin) publishMessage(msg *sipMessage) {
 
     timestamp := msg.ts
     fields := common.MapStr{}
+    fields["sip.unixtimenano"] = timestamp.UnixNano()
     fields["type"] = "sip"
-    fields["transport"] = msg.transport.String()
-    fields["raw"] = string(msg.raw)
-    fields["src"] = fmt.Sprintf("%s:%d",msg.tuple.SrcIP,msg.tuple.SrcPort)
-    fields["dst"] = fmt.Sprintf("%s:%d",msg.tuple.DstIP,msg.tuple.DstPort)
+    fields["sip.transport"] = msg.transport.String()
+    fields["sip.raw"] = string(msg.raw)
+    fields["sip.src"] = fmt.Sprintf("%s:%d",msg.tuple.SrcIP,msg.tuple.SrcPort)
+    fields["sip.dst"] = fmt.Sprintf("%s:%d",msg.tuple.DstIP,msg.tuple.DstPort)
 
     if msg.isRequest {
-        fields["method"     ] = fmt.Sprintf("%s",msg.method)
-        fields["request_uri"] = fmt.Sprintf("%s",msg.requestUri)
+        fields["sip.method"     ] = fmt.Sprintf("%s",msg.method)
+        fields["sip.request_uri"] = fmt.Sprintf("%s",msg.requestUri)
     }else{
-        fields["status_code"  ] = int(msg.statusCode)
-        fields["status_phrase"] = fmt.Sprintf("%s",msg.statusPhrase)
+        fields["sip.status_code"  ] = int(msg.statusCode)
+        fields["sip.status_phrase"] = fmt.Sprintf("%s",msg.statusPhrase)
     }
 
-    fields["from"   ] = fmt.Sprintf("%s",msg.from)
-    fields["to"     ] = fmt.Sprintf("%s",msg.to)
-    fields["cseq"   ] = fmt.Sprintf("%s",msg.cseq)
-    fields["call_id"] = fmt.Sprintf("%s",msg.callid)
+    fields["sip.from"   ] = fmt.Sprintf("%s",msg.from)
+    fields["sip.to"     ] = fmt.Sprintf("%s",msg.to)
+    fields["sip.cseq"   ] = fmt.Sprintf("%s",msg.cseq)
+    fields["sip.call_id"] = fmt.Sprintf("%s",msg.callid)
 
     sipHeaders := common.MapStr{}
-    fields["headers"] = sipHeaders
+    fields["sip.headers"] = sipHeaders
 
     if msg.headers != nil{
         for header,lines := range *(msg.headers){
@@ -138,7 +139,7 @@ func (sip *sipPlugin) publishMessage(msg *sipMessage) {
     }
 
     sipBody := common.MapStr{}
-    fields["body"] = sipBody
+    fields["sip.body"] = sipBody
 
     if msg.body !=nil{
         for content,keyval := range (msg.body){

@@ -267,7 +267,10 @@ func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
 
     // なんの問題もなく、ボディがある場合はボディをパースする
     if sipMsg.contentlength > 0 {
-        sipMsg.parseSIPBody()
+        err := sipMsg.parseSIPBody()
+        if err != nil{
+            sipMsg.note = common.NetString(fmt.Sprintf("%s",err))
+        }
     }
 
     sip.publishMessage(sipMsg)

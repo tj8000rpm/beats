@@ -30,6 +30,12 @@
         unixtime as nanosec
       example: 1516199666016756000
 
+    - name: sip.transport
+      type: keyword
+      description: >
+        transport protocol(udp,tcp)
+      example: tcp
+
      #in case Request
     - name: sip.method
       type: keyword

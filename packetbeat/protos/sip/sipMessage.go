@@ -43,6 +43,9 @@ type sipMessage struct {
     // Raw Data
     raw          []byte
 
+    // Additional Information
+    note         common.NetString
+
     // Offsets
     hdr_start    int
     hdr_len      int
@@ -386,7 +389,7 @@ func (msg *sipMessage) parseSIPBody() (err error){
     // content-typeがない場合はreturnして終了
     if !hd_ctype_ok {
         debugf("This sip message has not body.")
-        return fmt.Errorf("invalid call")
+        return fmt.Errorf("parseSIPBody: no content-type header")
     }
 
     msg.body=map[string]*map[string][]common.NetString{}
@@ -399,21 +402,20 @@ func (msg *sipMessage) parseSIPBody() (err error){
             _ = err
             if err != nil{
                 debugf("%s : parseError",lower_case_content_type)
-                return fmt.Errorf("Parse error")
+                return fmt.Errorf("invalid %s format.",lower_case_content_type)
             }
 
             msg.body[lower_case_content_type]=body
 
         default:
             debugf("unspported content-type. : %s",lower_case_content_type)
-            return fmt.Errorf("Parse error")
-
+            return fmt.Errorf("unspported content-type.")
     }
 
     return  nil
 }
 
-func (msg sipMessage) parseBody_SDP(rawData []byte) (body *map[string][]common.NetString, err error){
+func (msg *sipMessage) parseBody_SDP(rawData []byte) (body *map[string][]common.NetString, err error){
     body=&map[string][]common.NetString{}
     sdp_lines:=strings.Split(string(rawData),"\r\n")
     for i:=0;i<len(sdp_lines);i++{

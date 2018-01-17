@@ -210,15 +210,15 @@ func TestParseUdp_responsePacketWithSDP(t *testing.T){
         // body:=fields["sip.body"]
         // mandatories
         assert.Equal(t, "Session Progess",
-                        fields["sip.status_phrase"], 
+                        fields["sip.status-phrase"], 
                         "There should be [Session Progress].")
 
         assert.Equal(t, 183, 
-                        fields["sip.status_code"], 
+                        fields["sip.status-code"], 
                         "There should be 183.")
 
         assert.Equal(t, "1-2363@10.0.0.1" ,
-                        fields["sip.call_id"], 
+                        fields["sip.call-id"], 
                         "There should be [1-2363@10.0.0.1].")
 
         assert.Equal(t, "\"sipp\" <sip:sipp@10.0.0.1>;tag=2363SIPpTag001",

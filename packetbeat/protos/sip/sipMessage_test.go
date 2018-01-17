@@ -42,4 +42,39 @@ func TestSeparatedStrings(t *testing.T) {
     assert.Equal(t,"\"aaaaa,", fmt.Sprintf("%s",(*separatedStrings)[1]), "There should be [\"aaaaa,].")
 }
 
+// func TestParseSIPHeader() // (err error){
+// func TestParseSIPHeaderToMap(cutPosS []int,cutPosE []int)// (*map[string][]common.NetString,[]string) {
+// func TestParseSIPBody()// (err error){
+// func TestParseBody_SDP(rawData []byte)// (body *map[string][]common.NetString, err error){
+func TestParseBody_SDP(t *testing.T) {
+    var result  *map[string][]common.NetString
+    var err     error
+    var garbage []byte
 
+    msg := sipMessage{}
+
+    garbage = []byte( "v=0\r\n"                         +
+                      "o=- 0 0 IN IP4 10.0.0.1    \r\n" + // Trim spaces
+                      "s=-\r\n"                         +
+                      "c=IN IP4 10.0.0.1\r\n"           +
+                      "t=0 0\r\n"                       +
+                      "m=audio 5012 RTP/AVP 0 16\r\n"   +
+                      "a=rtpmap:0 PCMU/8000\r\n"        + // Multiple
+                      "a=rtpmap:16 G729/8000\r\n")
+
+    result,err =msg.parseBody_SDP(garbage)
+    assert.Equal(t,nil                    , err                                 , "error recived"    )
+
+    assert.Equal(t,7                      , len(*result)                        , "There should be." )
+    assert.Equal(t,1                      , len((*result)["v"])                 , "There should be." )
+    assert.Equal(t,1                      , len((*result)["o"])                 , "There should be." )
+    assert.Equal(t,1                      , len((*result)["c"])                 , "There should be." )
+    assert.Equal(t,1                      , len((*result)["t"])                 , "There should be." )
+    assert.Equal(t,2                      , len((*result)["a"])                 , "There should be." )
+    assert.Equal(t,"0"                    , fmt.Sprintf("%s",(*result)["v"][0]) , "There should be." )
+    assert.Equal(t,"- 0 0 IN IP4 10.0.0.1", fmt.Sprintf("%s",(*result)["o"][0]) , "There should be." )
+    assert.Equal(t,"IN IP4 10.0.0.1"      , fmt.Sprintf("%s",(*result)["c"][0]) , "There should be." )
+    assert.Equal(t,"0 0"                  , fmt.Sprintf("%s",(*result)["t"][0]) , "There should be." )
+    assert.Equal(t,"rtpmap:0 PCMU/8000"   , fmt.Sprintf("%s",(*result)["a"][0]) , "There should be." )
+    assert.Equal(t,"rtpmap:16 G729/8000"  , fmt.Sprintf("%s",(*result)["a"][1]) , "There should be." )
+}

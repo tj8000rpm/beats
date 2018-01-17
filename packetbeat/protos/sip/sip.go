@@ -4,7 +4,7 @@ package sip
 import (
     "time"
 
-	"github.com/elastic/beats/libbeat/common"
+    "github.com/elastic/beats/libbeat/common"
     "github.com/elastic/beats/libbeat/logp"
     "github.com/elastic/beats/libbeat/monitoring"
 

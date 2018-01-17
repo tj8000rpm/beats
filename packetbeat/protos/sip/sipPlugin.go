@@ -5,7 +5,7 @@ import (
     "time"
 
     "github.com/elastic/beats/libbeat/beat"
-	"github.com/elastic/beats/libbeat/common"
+    "github.com/elastic/beats/libbeat/common"
     "github.com/elastic/beats/libbeat/logp"
 
     "github.com/elastic/beats/packetbeat/procs"

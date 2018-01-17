@@ -6,7 +6,7 @@ import (
     "strings"
     "time"
 
-	"github.com/elastic/beats/libbeat/common"
+    "github.com/elastic/beats/libbeat/common"
 )
 
 /**

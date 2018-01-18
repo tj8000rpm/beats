@@ -118,16 +118,16 @@ func (sip *sipPlugin) publishMessage(msg *sipMessage) {
 
     if msg.isRequest {
         fields["sip.method"     ] = fmt.Sprintf("%s",msg.method)
-        fields["sip.request_uri"] = fmt.Sprintf("%s",msg.requestUri)
+        fields["sip.request-uri"] = fmt.Sprintf("%s",msg.requestUri)
     }else{
-        fields["sip.status_code"  ] = int(msg.statusCode)
-        fields["sip.status_phrase"] = fmt.Sprintf("%s",msg.statusPhrase)
+        fields["sip.status-code"  ] = int(msg.statusCode)
+        fields["sip.status-phrase"] = fmt.Sprintf("%s",msg.statusPhrase)
     }
 
     fields["sip.from"   ] = fmt.Sprintf("%s",msg.from)
     fields["sip.to"     ] = fmt.Sprintf("%s",msg.to)
     fields["sip.cseq"   ] = fmt.Sprintf("%s",msg.cseq)
-    fields["sip.call_id"] = fmt.Sprintf("%s",msg.callid)
+    fields["sip.call-id"] = fmt.Sprintf("%s",msg.callid)
 
     sipHeaders := common.MapStr{}
     fields["sip.headers"] = sipHeaders

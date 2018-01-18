@@ -45,13 +45,24 @@ func TestSeparatedStrings(t *testing.T) {
 // func TestParseSIPHeader() // (err error){
 // func TestParseSIPHeaderToMap(cutPosS []int,cutPosE []int)// (*map[string][]common.NetString,[]string) {
 // func TestParseSIPBody()// (err error){
-// func TestParseBody_SDP(rawData []byte)// (body *map[string][]common.NetString, err error){
 func TestParseBody_SDP(t *testing.T) {
     var result  *map[string][]common.NetString
     var err     error
     var garbage []byte
 
     msg := sipMessage{}
+
+    // nil
+    result,err =msg.parseBody_SDP(garbage)
+    assert.Equal(t,nil                    , err                                 , "error recived"    )
+    assert.Equal(t,0                      , len(*result)                        , "There should be." )
+
+    // malformed
+    garbage = []byte( "\r\n123149afajbngohk;kdgj\r\najkavnaa:aaaa\r\n===a===")
+    result,err =msg.parseBody_SDP(garbage)
+    assert.Equal(t,nil                    , err                                 , "error recived"    )
+    assert.Equal(t,1                      , len(*result)                        , "There should be." )
+    assert.Equal(t,"==a==="               , fmt.Sprintf("%s",(*result)[""][0])  , "There should be." )
 
     garbage = []byte( "v=0\r\n"                         +
                       "o=- 0 0 IN IP4 10.0.0.1    \r\n" + // Trim spaces
@@ -77,4 +88,5 @@ func TestParseBody_SDP(t *testing.T) {
     assert.Equal(t,"0 0"                  , fmt.Sprintf("%s",(*result)["t"][0]) , "There should be." )
     assert.Equal(t,"rtpmap:0 PCMU/8000"   , fmt.Sprintf("%s",(*result)["a"][0]) , "There should be." )
     assert.Equal(t,"rtpmap:16 G729/8000"  , fmt.Sprintf("%s",(*result)["a"][1]) , "There should be." )
+
 }

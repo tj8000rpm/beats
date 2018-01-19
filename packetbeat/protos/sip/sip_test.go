@@ -153,6 +153,25 @@ func TestParseUdp_requestPacketWithSDP(t *testing.T){
     sip.ParseUDP(packet)
     assert.Equal(t, 0, sip.fragmentBuffer.Size(), "There should be empty.")
     assert.Equal(t, 1, store.size(), "There should be one message published.")
+    if store.size() == 1{
+        //fields:=store.events[0].Fields
+        //headers,_:=fields["sip.headers"].(common.MapStr)
+        // body:=fields["sip.body"]
+        // mandatories
+//        assert.Equal(t, "INVITE", fields["sip.method"], "There should be [INVITE].") 
+//        assert.Equal(t, "sip:0312345678@192.168.0.1;user=phone", fields["sip.request-uri"], "There should be [sip:0312345678@192.168.0.1;user=phone].")
+//        assert.Equal(t, "SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK81075720",
+//                                                                   headers["via"    ].([]common.NetString)[0], "There should be [SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK81075720].") 
+//        assert.Equal(t, "<sip:sipurl@192.168.0.1>;tag=269050131",  headers["from"   ].([]common.NetString)[0], "There should be [<sip:sipurl@192.168.0.1>;tag=269050131]") 
+//        assert.Equal(t, "<sip:0312341234@192.168.0.1;user=phone>", headers["to"     ].([]common.NetString)[0], "There should be [<sip:0312341234@192.168.0.1;user=phone>]") 
+//        assert.Equal(t, "<sip:301234123@10.0.0.1;user=phone>",     headers["contact"].([]common.netstring)[0], "There should be [<sip:301234123@10.0.0.1;user=phone>]") 
+//        assert.Equal(t, "hogehoge@192.168.0.1", headers["call-id"].([]common.NetString)[0], "There should be [hogehoge@192.168.0.1]") 
+//        assert.Equal(t, "hogehoge@192.168.0.1", fields["sip.call-id"], "There should be [hogehoge@192.168.0.1]") 
+        //assert.Equal(t, "", headers[""][0], "There should be []") 
+        //assert.Equal(t, "", headers[""][0], "There should be []") 
+        //assert.Equal(t, "", headers[""][0], "There should be []") 
+
+    }
 }
 
 func TestParseUdp_requestPacketWithoutSDP(t *testing.T){

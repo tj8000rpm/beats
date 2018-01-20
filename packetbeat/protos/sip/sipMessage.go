@@ -328,9 +328,10 @@ func (msg *sipMessage) parseSIPHeaderToMap(cutPosS []int,cutPosE []int) (*map[st
             // みたいなケースに対応
             if msg.raw[s] == byte(' ') || msg.raw[s] == byte('\t'){
                 if lastheader!=""{
-                    lastelement:=string(getLastElementStrArray((*headers)[lastheader]))
+                    lastElement:=string(getLastElementStrArray((*headers)[lastheader]))
                     // TrimSpaceは" "と"\t"の両方削除してくれる
-                    lastelement+=fmt.Sprintf(" %s",strings.TrimSpace(string(msg.raw[s:e])))
+                    lastElement+=fmt.Sprintf(" %s",strings.TrimSpace(string(msg.raw[s:e])))
+                    (*headers)[lastheader][len((*headers)[lastheader])-1]=common.NetString(lastElement)
                 }else{
                     // 当該行を無視する
                 }
@@ -338,6 +339,7 @@ func (msg *sipMessage) parseSIPHeaderToMap(cutPosS []int,cutPosE []int) (*map[st
             }
 
             // 前回処理した場所は改行箇所であった部分で,区切りを探す
+            // Process 342
             if lastheader!=""{
                 lastHeaderEndIdx:=len((*headers)[lastheader])-1
                 if lastHeaderEndIdx < 0 {continue} // ないはずだけど・・・
@@ -373,8 +375,20 @@ func (msg *sipMessage) parseSIPHeaderToMap(cutPosS []int,cutPosE []int) (*map[st
             lastheader=key
         }
         // 最終要素でもカンマ区切りを探す
+        // FIXME: Same Process 342...
         if lastheader!=""{
+            lastHeaderEndIdx:=len((*headers)[lastheader])-1
+            if lastHeaderEndIdx < 0 {continue} // ないはずだけど・・・
 
+            lastElement:=string(getLastElementStrArray((*headers)[lastheader]))
+            separatedStrings:=msg.separateCsv(lastElement)
+            for idx,element := range *separatedStrings {
+                if idx == 0{
+                    (*headers)[lastheader][lastHeaderEndIdx]=element
+                }else{
+                    (*headers)[lastheader]=append((*headers)[lastheader],element)
+                }
+            }
         }
     }
     return headers, first_lines
@@ -383,16 +397,26 @@ func (msg *sipMessage) parseSIPHeaderToMap(cutPosS []int,cutPosE []int) (*map[st
 // SIPボディのパース処理
 // TODO:Content-Encoding時の処理(RFC3261) 未実装
 func (msg *sipMessage) parseSIPBody() (err error){
+    // in case no called before parseSIPHeader
+    if (msg.headers) == nil{
+        debugf("parseSIPBody: This sip message's .headers is nill.")
+        return fmt.Errorf("headers is nill")
+    }
 
     contenttype_array  , hd_ctype_ok   := (*msg.headers)["content-type"]
 
     // content-typeがない場合はreturnして終了
     if !hd_ctype_ok {
-        debugf("This sip message has not body.")
-        return fmt.Errorf("parseSIPBody: no content-type header")
+        debugf("parseSIPBody: This sip message has not body.")
+        return fmt.Errorf("no content-type header")
     }
 
     msg.body=map[string]*map[string][]common.NetString{}
+
+    if len(contenttype_array) == 0{
+        //contenttype_array has no element
+        return nil
+    }
 
     // bodyの種類により動作を変更する
     lower_case_content_type:=strings.ToLower(string(getLastElementStrArray(contenttype_array)))
@@ -408,8 +432,8 @@ func (msg *sipMessage) parseSIPBody() (err error){
             msg.body[lower_case_content_type]=body
 
         default:
-            debugf("unspported content-type. : %s",lower_case_content_type)
-            return fmt.Errorf("unspported content-type.")
+            debugf("unsupported content-type. : %s",lower_case_content_type)
+            return fmt.Errorf("unsupported content-type")
     }
 
     return  nil

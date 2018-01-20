@@ -43,8 +43,125 @@ func TestSeparatedStrings(t *testing.T) {
 }
 
 // func TestParseSIPHeader() // (err error){
-// func TestParseSIPHeaderToMap(cutPosS []int,cutPosE []int)// (*map[string][]common.NetString,[]string) {
-// func TestParseSIPBody()// (err error){
+func TestParseSIPHeaderToMap(t *testing.T){
+    var garbage []byte
+    firstline:="SIP/2.0 200 OK\r\n"
+    header0  :="Via: testVia1,\r\n"
+    header1  :=" testVia2, \r\n"
+    header2  :=" testVia3,  testVia4\r\n"
+    header3  :="From: testFrom\r\n"
+    header4  :="To  \t :\t  testTo\t\t\r\n"
+    header5  :="Call-ID: testCall-ID\r\n"
+    header6  :="CSeq: testCSeq\r\n"
+    header7  :="Via: testVia5,testVia6\r\n"
+    garbage = []byte( firstline +
+                      header0   +
+                      header1   +
+                      header2   +
+                      header3   +
+                      header4   +
+                      header5   +
+                      header6   +
+                      header7   +
+                      "\r\n")
+    offset0:=0
+    offset1:=offset0+len(firstline)
+    offset2:=offset1+len(header0)
+    offset3:=offset2+len(header1)
+    offset4:=offset3+len(header2)
+    offset5:=offset4+len(header3)
+    offset6:=offset5+len(header4)
+    offset7:=offset6+len(header5)
+    offset8:=offset7+len(header6)
+    cuts:=[]int{               offset0,                offset1,                offset2,
+                               offset3,                offset4,                offset5,
+                               offset6,                offset7,                offset8}
+    cute:=[]int{      len(firstline)-2, offset1+len(header0)-2, offset2+len(header1)-2, 
+                offset3+len(header2)-2, offset4+len(header3)-2, offset5+len(header4)-2,
+                offset6+len(header5)-2, offset7+len(header6)-2, offset8+len(header7)-2}
+    msg := sipMessage{}
+    msg.raw = garbage
+    headers, first_lines:=msg.parseSIPHeaderToMap(cuts,cute)
+
+    assert.Equal(t,3        , len(first_lines)                 , "There should be." )
+    assert.Equal(t,"SIP/2.0", fmt.Sprintf("%s",first_lines[0]) , "There should be." )
+    assert.Equal(t,"200"    , fmt.Sprintf("%s",first_lines[1]) , "There should be." )
+    assert.Equal(t,"OK"     , fmt.Sprintf("%s",first_lines[2]) , "There should be." )
+
+    assert.Equal(t,5             , len(*headers)                              , "There should be." )
+    assert.Equal(t,1             , len((*headers)["from"   ])                 , "There should be." )
+    assert.Equal(t,1             , len((*headers)["to"     ])                 , "There should be." )
+    assert.Equal(t,6             , len((*headers)["via"    ])                 , "There should be." )
+    assert.Equal(t,1             , len((*headers)["cseq"   ])                 , "There should be." )
+    assert.Equal(t,1             , len((*headers)["call-id"])                 , "There should be." )
+
+    assert.Equal(t,"testFrom"    , fmt.Sprintf("%s",(*headers)["from"   ][0]) , "There should be." )
+    assert.Equal(t,"testTo"      , fmt.Sprintf("%s",(*headers)["to"     ][0]) , "There should be." )
+    assert.Equal(t,"testCSeq"    , fmt.Sprintf("%s",(*headers)["cseq"   ][0]) , "There should be." )
+    assert.Equal(t,"testCall-ID" , fmt.Sprintf("%s",(*headers)["call-id"][0]) , "There should be." )
+    assert.Equal(t,"testVia1"    , fmt.Sprintf("%s",(*headers)["via"    ][0]) , "There should be." )
+    assert.Equal(t,"testVia2"    , fmt.Sprintf("%s",(*headers)["via"    ][1]) , "There should be." )
+    assert.Equal(t,"testVia3"    , fmt.Sprintf("%s",(*headers)["via"    ][2]) , "There should be." )
+    assert.Equal(t,"testVia4"    , fmt.Sprintf("%s",(*headers)["via"    ][3]) , "There should be." )
+    assert.Equal(t,"testVia5"    , fmt.Sprintf("%s",(*headers)["via"    ][4]) , "There should be." )
+    assert.Equal(t,"testVia6"    , fmt.Sprintf("%s",(*headers)["via"    ][5]) , "There should be." )
+}
+func TestParseSIPBody(t *testing.T) { // (err error){
+    var err error
+    var garbage []byte
+    msg := sipMessage{}
+
+    // check when msg.header == nil
+    err=msg.parseSIPBody()
+    assert.Equal(t,"headers is nill", fmt.Sprintf("%s",err), "headers should be nill.")
+
+    // check msg.header has not content-type header.
+    msg.headers = &map[string][]common.NetString{}
+    err=msg.parseSIPBody()
+    assert.Equal(t,"no content-type header", fmt.Sprintf("%s",err), "header should not have content-type.")
+
+    // check zero length content-type header array
+    msg.headers = &map[string][]common.NetString{}
+    (*msg.headers)["content-type"]=[]common.NetString{}
+    err=msg.parseSIPBody()
+    assert.Equal(t,nil, err, "shuld be no error")
+    assert.Equal(t,0, len(msg.body), "shuld be no entity in msg.body")
+
+    // check not supported content-type.
+    // initialized
+    msg = sipMessage{}
+    msg.headers = &map[string][]common.NetString{}
+    array:=[]common.NetString{}
+    array=(*msg.headers)["content-type"]
+    array=append(array,common.NetString("application/unsupported"))
+    (*msg.headers)["content-type"]=array
+    err=msg.parseSIPBody()
+    assert.Equal(t,"unsupported content-type", fmt.Sprintf("%s",err), "shuld be error")
+    assert.Equal(t,"application/unsupported",fmt.Sprintf("%s",(*msg.headers)["content-type"][0]), "shuld hasve content-type")
+    assert.Equal(t,0, len(msg.body), "shuld be no entity in msg.body")
+
+    // check supported content-type, sdp.
+    // initialized
+    msg = sipMessage{}
+    garbage = []byte( "v=0\r\n"                    +
+                      "o=- 0 0 IN IP4 10.0.0.1\r\n"+
+                      "s=-\r\n"                    +
+                      "c=IN IP4 10.0.0.1\r\n"      +
+                      "t=0 0\r\n"                  +
+                      "m=audio 5012 RTP/AVP 0\r\n" +
+                      "a=rtpmap:0 PCMU/8000\r\n")
+    msg.headers = &map[string][]common.NetString{}
+    array=(*msg.headers)["content-type"]
+    array=append(array,common.NetString("application/sdp"))
+    (*msg.headers)["content-type"]=array
+    msg.raw=garbage
+    msg.bdy_start=0
+    msg.contentlength=len(garbage)
+    err=msg.parseSIPBody()
+    assert.Equal(t,nil, err, "shuld be no error")
+    assert.Equal(t,1, len(msg.body), "shuld be one entity in msg.body")
+}
+
 func TestParseBody_SDP(t *testing.T) {
     var result  *map[string][]common.NetString
     var err     error
@@ -88,5 +205,4 @@ func TestParseBody_SDP(t *testing.T) {
     assert.Equal(t,"0 0"                  , fmt.Sprintf("%s",(*result)["t"][0]) , "There should be." )
     assert.Equal(t,"rtpmap:0 PCMU/8000"   , fmt.Sprintf("%s",(*result)["a"][0]) , "There should be." )
     assert.Equal(t,"rtpmap:16 G729/8000"  , fmt.Sprintf("%s",(*result)["a"][1]) , "There should be." )
-
 }

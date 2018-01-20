@@ -89,7 +89,6 @@ func (sip *sipPlugin) deleteBuffer(k hashableSIPTuple) *sipBuffer {
 }
 // トランザクションがタイムアウトした時の処理
 func (sip *sipPlugin) expireBuffer(t *sipBuffer) {
-    //t.notes = append(t.notes, "noResponse.Error()")
     debugf("%s %s", "bufferTimeout.Error()", t.tuple.String())
     sip.publishMessage(t.message)
     unmatchedRequests.Add(1)
@@ -269,7 +268,7 @@ func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
     if sipMsg.contentlength > 0 {
         err := sipMsg.parseSIPBody()
         if err != nil{
-            sipMsg.note = common.NetString(fmt.Sprintf("%s",err))
+            sipMsg.notes = append(sipMsg.notes,common.NetString(fmt.Sprintf("%s",err)))
         }
     }
 

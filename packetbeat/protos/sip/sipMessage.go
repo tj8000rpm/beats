@@ -44,7 +44,7 @@ type sipMessage struct {
     raw          []byte
 
     // Additional Information
-    note         common.NetString
+    notes        []common.NetString
 
     // Offsets
     hdr_start    int
@@ -170,13 +170,36 @@ func (msg *sipMessage) parseSIPHeader() (err error){
 
     // TODO: 処理をきちんとかく
     // 必須ヘッダ不足
-    if !(existTo && existFrom && existCSeq && existCallId && existMaxForwards && existVia){
+    if existTo {
+        msg.to    =getLastElementStrArray(to_array)
+    }else{
+        msg.notes = append(msg.notes,common.NetString("mandatory header [To] does not exist."))
     }
 
-    msg.to    =getLastElementStrArray(to_array)
-    msg.from  =getLastElementStrArray(from_array)
-    msg.cseq  =getLastElementStrArray(cseq_array)
-    msg.callid=getLastElementStrArray(callid_array)
+    if existFrom {
+        msg.from  =getLastElementStrArray(from_array)
+    }else{
+        msg.notes = append(msg.notes,common.NetString("mandatory header [From] does not exist."))
+    }
+
+    if existCSeq{
+        msg.cseq  =getLastElementStrArray(cseq_array)
+    }else{
+        msg.notes = append(msg.notes,common.NetString("mandatory header [CSeq] does not exist."))
+    }
+
+    if existCallId{
+        msg.callid=getLastElementStrArray(callid_array)
+    }else{
+        msg.notes = append(msg.notes,common.NetString("mandatory header [Call-ID] does not exist."))
+    }
+
+    if ! existMaxForwards{
+    }
+    if ! existVia{
+        msg.notes = append(msg.notes,common.NetString("mandatory header [Via] does not exist."))
+    }
+
 
     msg.headers=headers
 
@@ -199,7 +222,7 @@ func (msg *sipMessage) parseSIPHeader() (err error){
         }
     }else{
         // TODO:Malformed Packets
-        return fmt.Errorf("malformed packet(thi is not sip messages)")
+        return fmt.Errorf("malformed packet(this is not sip messages)")
     }
 
     // Content-Lenghtは0でいったん初期化

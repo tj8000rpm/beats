@@ -42,7 +42,88 @@ func TestSeparatedStrings(t *testing.T) {
     assert.Equal(t,"\"aaaaa,", fmt.Sprintf("%s",(*separatedStrings)[1]), "There should be [\"aaaaa,].")
 }
 
-// func TestParseSIPHeader() // (err error){
+func TestParseSIPHeader(t *testing.T){ // (err error){
+    var garbage []byte
+    var err error
+    var msg sipMessage
+    // CRLF only messags
+    garbage = []byte( "\r\n"  +
+                      "\r\n"  +
+                      "\r\n"  +
+                      "\r\n"  +
+                      "\r\n"  +
+                      "\r\n"  +
+                      "\r\n"  +
+                      "\r\n"  +
+                      "\r\n")
+    msg = sipMessage{}
+    msg.raw = garbage
+    err = msg.parseSIPHeader()
+    assert.Equal(t,"malformed packet", fmt.Sprintf("%s",err) , "There should be no error." )
+    assert.Equal(t,-1                , msg.hdr_start         , "There should be no error." )
+    assert.Equal(t,-1                , msg.hdr_len           , "There should be no error." )
+    assert.Equal(t,-1                , msg.bdy_start         , "There should be no error." )
+    assert.Equal(t,-1                , msg.contentlength     , "There should be no error." )
+
+    // \r\n start and fragmented packet
+    garbage = []byte( "\r\n"                        +
+                      "\r\n"                        +
+                      "\r\n"                        +
+                      "\r\n"                        +
+                      "SIP/2.0 200 OK\r\n"          +
+                      "Via: testVia1,\r\n"          +
+                      " testVia2, \r\n"             +
+                      " testVia3,  testVia4\r\n"    +
+                      "From: testFrom\r\n"          +
+                      "To  \t :\t  testTo\t\t\r\n"  +
+                      "Call-ID: testCall-ID\r\n"    +
+                      "CSeq: testCSeq\r\n"          +
+                      "Vi")
+    msg = sipMessage{}
+    msg.raw = garbage
+    err = msg.parseSIPHeader()
+    assert.Equal(t,nil  ,err ,"There should be no error." )
+    assert.Equal(t, 8   ,msg.hdr_start     ,"There should be no error." )
+    assert.Equal(t,-1   ,msg.hdr_len       ,"There should be no error." )
+    assert.Equal(t,-1   ,msg.bdy_start     ,"There should be no error." )
+    assert.Equal(t,-1   ,msg.contentlength ,"There should be no error." )
+
+    // no mandatory header
+    garbage = []byte( "SIP/2.0 200 OK\r\n"          +
+                      "Via: testVia1,\r\n"          +
+                      " testVia2, \r\n"             +
+                      " testVia3,  testVia4\r\n"    +
+                      "Via: testVia5,testVia6\r\n"  +
+                      "\r\n")
+    msg = sipMessage{}
+    msg.raw = garbage
+    err = msg.parseSIPHeader()
+    assert.Equal(t,nil                     ,err        ,"There should be." )
+    assert.Equal(t,(common.NetString)(nil) ,msg.to     ,"There should be." )
+    assert.Equal(t,(common.NetString)(nil) ,msg.from   ,"There should be." )
+    assert.Equal(t,(common.NetString)(nil) ,msg.cseq   ,"There should be." )
+    assert.Equal(t,(common.NetString)(nil) ,msg.callid ,"There should be." )
+    assert.Contains(t,msg.notes ,common.NetString("mandatory header [To] does not exist.")      ,"There should be." )
+    assert.Contains(t,msg.notes ,common.NetString("mandatory header [From] does not exist.")    ,"There should be." )
+    assert.Contains(t,msg.notes ,common.NetString("mandatory header [CSeq] does not exist.")    ,"There should be." )
+    assert.Contains(t,msg.notes ,common.NetString("mandatory header [Call-ID] does not exist.") ,"There should be." )
+
+    garbage = []byte( "SIP/2.0 200 OK\r\n"          +
+                      "Via: testVia1,\r\n"          +
+                      " testVia2, \r\n"             +
+                      " testVia3,  testVia4\r\n"    +
+                      "From: testFrom\r\n"          +
+                      "To  \t :\t  testTo\t\t\r\n"  +
+                      "Call-ID: testCall-ID\r\n"    +
+                      "CSeq: testCSeq\r\n"          +
+                      "Via: testVia5,testVia6\r\n"  +
+                      "\r\n")
+    msg = sipMessage{}
+    msg.raw = garbage
+    err = msg.parseSIPHeader()
+    assert.Equal(t,nil        , err                 , "There should be." )
+}
+
 func TestParseSIPHeaderToMap(t *testing.T){
     var garbage []byte
     firstline:="SIP/2.0 200 OK\r\n"

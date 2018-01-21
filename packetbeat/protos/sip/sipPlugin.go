@@ -30,11 +30,10 @@ type sipPlugin struct {
     results protos.Reporter // Channel where results are pushed.
 }
 
-// Transactionとしてタイムアウトさせる方法とかがここにありそう。
 func (sip *sipPlugin) init(results protos.Reporter, config *sipConfig) error {
     sip.setFromConfig(config)
     sip.fragmentBuffer = common.NewCacheWithRemovalListener(
-        sip.fragmentBufferTimeout,                 // タイムアウト時間の設定
+        sip.fragmentBufferTimeout,              // タイムアウト時間の設定
         protos.DefaultTransactionHashSize,      // ハッシュサイズの設定
         func(k common.Key, v common.Value) {    // remove時のCallbackFunction
             buffer, ok := v.(*sipBuffer)
@@ -87,11 +86,20 @@ func (sip *sipPlugin) deleteBuffer(k hashableSIPTuple) *sipBuffer {
     }
     return nil
 }
-// トランザクションがタイムアウトした時の処理
+// 受信バッファに入ったメッセージがタイムアウトした時の処理
 func (sip *sipPlugin) expireBuffer(t *sipBuffer) {
     debugf("%s %s", "bufferTimeout.Error()", t.tuple.String())
-    sip.publishMessage(t.message)
-    unmatchedRequests.Add(1)
+    msg:=t.message
+    switch msg.getMessageStatus(){
+    case SIP_STATUS_HEADER_RECEIVING:
+        msg.notes = append(msg.notes,common.NetString(fmt.Sprintf("Buffer timeout: Could not reveive all messages.")))
+    case SIP_STATUS_BODY_RECEIVING:
+        msg.notes = append(msg.notes,common.NetString(fmt.Sprintf("Buffer timeout: Could not reveive all content length.")))
+    case SIP_STATUS_REJECTED: 
+        return
+    }
+    sip.publishMessage(msg)
+    bufferTimeout.Add(1)
 }
 
 func (sip *sipPlugin) ConnectionTimeout() time.Duration {
@@ -104,7 +112,7 @@ func (sip *sipPlugin) publishMessage(msg *sipMessage) {
         return
     }
 
-    //debugf("Publishing SIP Message. %s", msg.String())
+    debugf("Publishing SIP Message. %s", msg.String())
 
     timestamp := msg.ts
     fields := common.MapStr{}
@@ -171,7 +179,7 @@ func (sip *sipPlugin) sipTupleFromIPPort(t *common.IPPortTuple, trans transport)
     return tuple
 }
 
-// decodeSIPData decodes a byte array into a SIP struct. If an error occurs
+// createSIPMessage a byte array into a SIP struct. If an error occurs
 // then the returned sip pointer will be nil. This method recovers from panics
 // and is concurrency-safe.
 func (sip *sipPlugin) createSIPMessage(transp transport, rawData []byte) (msg *sipMessage, err error) {
@@ -182,11 +190,12 @@ func (sip *sipPlugin) createSIPMessage(transp transport, rawData []byte) (msg *s
         }
     }()
 
-    // SipMessageを作成、rawDataを保持
+    // create and initialized pakcet raw message and transport type.
     msg = &sipMessage{}
     msg.transport=transp
     msg.raw = rawData
 
+    // offset values are initialized to -1
     msg.hdr_start    =-1
     msg.hdr_len      =-1
     msg.bdy_start    =-1
@@ -205,7 +214,6 @@ func (sip *sipPlugin) newBuffer(ts time.Time, tuple sipTuple, cmd common.Cmdline
     return buffer
 }
 
-// udpパケットで呼ばれた際のパース
 func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
 
     defer logp.Recover("Sip ParseUdp")
@@ -221,57 +229,54 @@ func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
     var err error
 
     if buffer == nil {
-        // 新規もの
+        // In case previous mesage not find in the buffer
         debugf("New sip message(not in buffer): %s",sipTuple)
 
+        // create new SIP Message
         sipMsg, err = sip.createSIPMessage(transportUDP, pkt.Payload)
-        _ = err
+
+        if err != nil{
+            // ignore this message
+            debugf("error %s\n",err)
+            return
+        }
+
         sipMsg.ts   =pkt.Ts
         sipMsg.tuple=pkt.Tuple
         sipMsg.cmdlineTuple=procs.ProcWatcher.FindProcessesTuple(&pkt.Tuple)
-
-        parseHeaderErr:=sipMsg.parseSIPHeader()
-        if parseHeaderErr != nil{
-            debugf("error %s\n",parseHeaderErr)
-            return
-        }
     }else{
-        // 続き物
+        // In case previouse message find in the buffer
         sipMsg=buffer.message
-        sipMsg.raw=append(sipMsg.raw,pkt.Payload...)
-        sipMsg.parseSIPHeader()
+        sipMsg.raw=append(sipMsg.raw,pkt.Payload...) // append to the previous message
+        // parse again
     }
-    
-    // SIPメッセージがヘッダの途中でフラグメントされていた場合
-    if sipMsg.hdr_len <= 0 {
-        debugf("Header fragment")
+
+    // parse sip headers.
+    // if the message was fragmented, the message buffered in below switch/case statement.
+    parseHeaderErr:=sipMsg.parseSIPHeader()
+    if parseHeaderErr != nil{
+        debugf("error %s\n",parseHeaderErr)
+        return
+    }
+
+    switch sipMsg.getMessageStatus(){
+    // In case the message was fragmented at header or body,
+    // buffering the message.
+    case SIP_STATUS_HEADER_RECEIVING, SIP_STATUS_BODY_RECEIVING:
+        debugf("fragmented packet")
         if buffer == nil{
             buffer = sip.newBuffer(sipMsg.ts, sipTuple, *sipMsg.cmdlineTuple, sipMsg)
         }
         sip.addBuffer(sipTuple.hashable(),buffer)
         return
 
-    // SIPメッセージがボディの途中でフラグメントされていた場合
-    } else if sipMsg.contentlength == -1{
-        debugf("Body fragment")
-
-        if buffer == nil{
-            buffer = sip.newBuffer(sipMsg.ts, sipTuple, *sipMsg.cmdlineTuple, sipMsg)
-        }
-        sip.addBuffer(sipTuple.hashable(),buffer)
-        return
-
-    } else {
-    }
-
-    // なんの問題もなく、ボディがある場合はボディをパースする
-    if sipMsg.contentlength > 0 {
+    // In case the message received completely, publishing the message.
+    case SIP_STATUS_RECEIVED:
         err := sipMsg.parseSIPBody()
         if err != nil{
             sipMsg.notes = append(sipMsg.notes,common.NetString(fmt.Sprintf("%s",err)))
         }
+        sip.publishMessage(sipMsg)
     }
-
-    sip.publishMessage(sipMsg)
 }
 

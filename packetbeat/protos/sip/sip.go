@@ -1,4 +1,3 @@
-// based on dns plugin
 package sip
 
 import (
@@ -15,14 +14,11 @@ var (
     debugf = logp.MakeDebug("sip")
 )
 
-// TODOなんやこれ
-// きっと何か失敗したときに返すもの・・・NewIntの処理は不明のため調べる
+// Packetbeats monitoring metrics
 var (
-    unmatchedRequests  = monitoring.NewInt(nil, "sip.unmatched_requests")
-    unmatchedResponses = monitoring.NewInt(nil, "sip.unmatched_responses")
+    bufferTimeout  = monitoring.NewInt(nil, "sip.buffer_timeouted")
 )
 
-// const maxDNSTupleRawSize = 16 + 16 + 2 + 2 + 4 + 1 // bytes?
 const maxHashableSipTupleRawSize = 16 + // ip addr (src) 128bit(ip v6)
                                    16 + // ip addr (dst) 128bit(ip v6)
                                     2 + // port number (src) 16bit
@@ -36,6 +32,13 @@ const  (
     transportUDP = 1
 )
 
+const (
+    SIP_STATUS_RECEIVED         = 0
+    SIP_STATUS_HEADER_RECEIVING = 1
+    SIP_STATUS_BODY_RECEIVING   = 2
+    SIP_STATUS_REJECTED         = 3
+)
+
 // SIPなのでダイアログで取るのはメモリやリアルタイム性から微妙と判断
 // SIPのメッセージは1つ1つをそのまま書き出す方向で実装
 // UDPのフラグメントだけ気にして実装
@@ -45,20 +48,17 @@ type sipBuffer struct {
     uac          common.Endpoint
     uas          common.Endpoint
     transport    transport
-    notes        []string
-    message  *sipMessage
+    message      *sipMessage
 }
 
 /**
  * どの構造体にも属さないメソッド ------------------------------------
  **/
 
-// protosに対してSIPと関数Newを紐付ける
 func init() {
     protos.Register("sip", New)
 }
 
-// NewはProtosから呼び出されるっぽい。
 func New(
     testMode bool,
     results protos.Reporter,
@@ -92,7 +92,6 @@ func getLastElementStrArray(array []common.NetString) common.NetString{
 // transport=0 tcp, transport=1, udp
 type transport uint8
 
-// %sで呼び出す時の暗黙関数名 -> String()
 func (t transport) String() string {
 
     transportNames := []string{

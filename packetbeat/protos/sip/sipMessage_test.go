@@ -110,8 +110,7 @@ func TestParseSIPHeader(t *testing.T){ // (err error){
     assert.Equal(t,  0 ,msg.hdr_start     ,"There should be  0." )
     assert.Equal(t, 89,msg.hdr_len        ,"There should be 89." )
     assert.Equal(t, 93,msg.bdy_start      ,"There should be 93." )
-    assert.Equal(t,  0 ,msg.contentlength ,"There should be  0." )
-
+    assert.Equal(t,  0 ,msg.contentlength ,"There should be  0." ) 
     // status-line/request-line fault
     garbage = []byte( "HTTP/1.1 302 Found\r\n"                                       +
                       "Location: https://golang.org/\r\n"                            +
@@ -441,8 +440,13 @@ func TestParseSIPBody(t *testing.T) { // (err error){
     err=msg.parseSIPBody()
     assert.Equal(t,"headers is nill", fmt.Sprintf("%s",err), "headers should be nill.")
 
-    // check msg.header has not content-type header.
+    // check when msg.contentlength == 0
     msg.headers = &map[string][]common.NetString{}
+    err=msg.parseSIPBody()
+    assert.Equal(t,nil, err, "shuld be no error")
+
+    // check msg.header has not content-type header.
+    msg.contentlength=30
     err=msg.parseSIPBody()
     assert.Equal(t,"no content-type header", fmt.Sprintf("%s",err), "header should not have content-type.")
 
@@ -456,6 +460,7 @@ func TestParseSIPBody(t *testing.T) { // (err error){
     // check not supported content-type.
     // initialized
     msg = sipMessage{}
+    msg.contentlength=30
     msg.headers = &map[string][]common.NetString{}
     array:=[]common.NetString{}
     array=(*msg.headers)["content-type"]
@@ -531,4 +536,32 @@ func TestParseBody_SDP(t *testing.T) {
     assert.Equal(t,"0 0"                  , fmt.Sprintf("%s",(*result)["t"][0]) , "There should be." )
     assert.Equal(t,"rtpmap:0 PCMU/8000"   , fmt.Sprintf("%s",(*result)["a"][0]) , "There should be." )
     assert.Equal(t,"rtpmap:16 G729/8000"  , fmt.Sprintf("%s",(*result)["a"][1]) , "There should be." )
+}
+
+func TestGetMessageStatus(t *testing.T) {
+    msg := sipMessage{}
+
+    msg.hdr_start=30
+    msg.hdr_len=-1
+    msg.bdy_start=-1
+    msg.contentlength=-1
+    assert.Equal(t,SIP_STATUS_HEADER_RECEIVING    , msg.getMessageStatus()   , "There should be HEADER RECEIVING." )
+
+    msg.hdr_start=30
+    msg.hdr_len=50
+    msg.bdy_start=54
+    msg.contentlength=-1
+    assert.Equal(t,SIP_STATUS_BODY_RECEIVING      , msg.getMessageStatus()   , "There should be BODY RECEIVING." )
+
+    msg.hdr_start=30
+    msg.hdr_len=50
+    msg.bdy_start=54
+    msg.contentlength=55
+    assert.Equal(t,SIP_STATUS_RECEIVED      , msg.getMessageStatus()   , "There should be RECEIVED." )
+
+    msg.hdr_start=30
+    msg.hdr_len=50
+    msg.bdy_start=54
+    msg.contentlength=0
+    assert.Equal(t,SIP_STATUS_RECEIVED      , msg.getMessageStatus()   , "There should be RECEIVED." )
 }

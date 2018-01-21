@@ -76,23 +76,28 @@ func (msg sipMessage) String() string {
     outputs+=" To     : "+string(msg.to)     + ", "
     outputs+=" CSeq   : "+string(msg.cseq)   + ", "
     outputs+=" Call-ID: "+string(msg.callid) + ", "
-    outputs+=" Headers: ["
-    for header,array := range *(msg.headers){
-        for idx,line:= range array{
-            outputs+=fmt.Sprintf(" { %20s[%3d] : %s} ",header,idx,line)
-        }
-    }
-    outputs+=", body: "
-    for body,maps_p := range msg.body{
-        outputs+=fmt.Sprintf("{ %s : ",body)
-        if(body == "application/sdp"){
-            for key,lines:= range *maps_p{
-                for idx,line:= range lines{
-                    outputs+=fmt.Sprintf("  { %5s[%3d] : %s } ",key,idx,line)
-                }
+
+    if msg.headers != nil{
+        outputs+=" Headers: ["
+        for header,array := range *(msg.headers){
+            for idx,line:= range array{
+                outputs+=fmt.Sprintf(" { %20s[%3d] : %s} ",header,idx,line)
             }
         }
-        outputs+=fmt.Sprintf(" }")
+    }
+    if msg.body != nil{
+        outputs+=", body: "
+        for body,maps_p := range msg.body{
+            outputs+=fmt.Sprintf("{ %s : ",body)
+            if(body == "application/sdp"){
+                for key,lines:= range *maps_p{
+                    for idx,line:= range lines{
+                        outputs+=fmt.Sprintf("  { %5s[%3d] : %s } ",key,idx,line)
+                    }
+                }
+            }
+            outputs+=fmt.Sprintf(" }")
+        }
     }
     return outputs
 }
@@ -432,6 +437,10 @@ func (msg *sipMessage) parseSIPBody() (err error){
         return fmt.Errorf("headers is nill")
     }
 
+    if msg.contentlength <= 0{
+        return nil
+     }
+
     contenttype_array  , hd_ctype_ok   := (*msg.headers)["content-type"]
 
     // content-typeがない場合はreturnして終了
@@ -492,3 +501,9 @@ func (msg *sipMessage) parseBody_SDP(rawData []byte) (body *map[string][]common.
     return body, nil
 }
 
+func (msg *sipMessage) getMessageStatus() (int){
+    if msg.hdr_start < 0 { return SIP_STATUS_REJECTED}
+    if msg.hdr_len   < 0 { return SIP_STATUS_HEADER_RECEIVING}
+    if msg.contentlength < 0 { return SIP_STATUS_BODY_RECEIVING}
+    return SIP_STATUS_RECEIVED
+}

@@ -103,25 +103,270 @@ func TestParseSIPHeader(t *testing.T){ // (err error){
     assert.Equal(t,(common.NetString)(nil) ,msg.from   ,"There should be." )
     assert.Equal(t,(common.NetString)(nil) ,msg.cseq   ,"There should be." )
     assert.Equal(t,(common.NetString)(nil) ,msg.callid ,"There should be." )
-    assert.Contains(t,msg.notes ,common.NetString("mandatory header [To] does not exist.")      ,"There should be." )
-    assert.Contains(t,msg.notes ,common.NetString("mandatory header [From] does not exist.")    ,"There should be." )
-    assert.Contains(t,msg.notes ,common.NetString("mandatory header [CSeq] does not exist.")    ,"There should be." )
-    assert.Contains(t,msg.notes ,common.NetString("mandatory header [Call-ID] does not exist.") ,"There should be." )
+    assert.Contains(t,msg.notes ,common.NetString("mandatory header [To] does not exist.")      ,"There should be contained." )
+    assert.Contains(t,msg.notes ,common.NetString("mandatory header [From] does not exist.")    ,"There should be contained." )
+    assert.Contains(t,msg.notes ,common.NetString("mandatory header [CSeq] does not exist.")    ,"There should be contained." )
+    assert.Contains(t,msg.notes ,common.NetString("mandatory header [Call-ID] does not exist.") ,"There should be contained." )
+    assert.Equal(t,  0 ,msg.hdr_start     ,"There should be  0." )
+    assert.Equal(t, 89,msg.hdr_len        ,"There should be 89." )
+    assert.Equal(t, 93,msg.bdy_start      ,"There should be 93." )
+    assert.Equal(t,  0 ,msg.contentlength ,"There should be  0." )
 
-    garbage = []byte( "SIP/2.0 200 OK\r\n"          +
-                      "Via: testVia1,\r\n"          +
-                      " testVia2, \r\n"             +
-                      " testVia3,  testVia4\r\n"    +
+    // status-line/request-line fault
+    garbage = []byte( "HTTP/1.1 302 Found\r\n"                                       +
+                      "Location: https://golang.org/\r\n"                            +
+                      "Content-Type: text/html; charset=utf-8\r\n"                   +
+                      "X-Cloud-Trace-Context: 8635c1565e2e6113d8600407750c9c4b\r\n"  +
+                      "Date: Sun, 21 Jan 2018 07:32:51 GMT\r\n"                      +
+                      "Server: Google Frontend\r\n"                                  +
+                      "Content-Length: 42\r\n"                                       +
+                      "\r\n"                                                         +
+                      "<a href=\"https://golang.org/\">Found</a>.\r\n")
+    msg = sipMessage{}
+    msg.raw = garbage
+    err = msg.parseSIPHeader()
+    assert.Equal(t,"malformed packet(this is not sip message)", fmt.Sprintf("%s",err)   ,"There should be." )
+    assert.Equal(t,(common.NetString)(nil) ,msg.to     ,"There should be." )
+    assert.Equal(t,(common.NetString)(nil) ,msg.from   ,"There should be." )
+    assert.Equal(t,(common.NetString)(nil) ,msg.cseq   ,"There should be." )
+    assert.Equal(t,(common.NetString)(nil) ,msg.callid ,"There should be." )
+    assert.Contains(t,msg.notes ,common.NetString("malformed packet. this is not sip message.")      ,"There should be contained." )
+
+    // invalid status number
+    garbage = []byte( "SIP/2.0 200C NG\r\n"         +
+                      "Via: testVia1\r\n"           +
                       "From: testFrom\r\n"          +
-                      "To  \t :\t  testTo\t\t\r\n"  +
+                      "To: testTo\t\t\r\n"          +
                       "Call-ID: testCall-ID\r\n"    +
                       "CSeq: testCSeq\r\n"          +
-                      "Via: testVia5,testVia6\r\n"  +
                       "\r\n")
     msg = sipMessage{}
     msg.raw = garbage
     err = msg.parseSIPHeader()
-    assert.Equal(t,nil        , err                 , "There should be." )
+    assert.Equal(t,uint16(999)                     ,msg.statusCode   ,"There should be." )
+    assert.Equal(t,common.NetString("NG")          ,msg.statusPhrase ,"There should be." )
+    assert.Equal(t,common.NetString("testTo")      ,msg.to     ,"There should be." )
+    assert.Equal(t,common.NetString("testFrom")    ,msg.from   ,"There should be." )
+    assert.Equal(t,common.NetString("testCSeq")    ,msg.cseq   ,"There should be." )
+    assert.Equal(t,common.NetString("testCall-ID") ,msg.callid ,"There should be." )
+    assert.Contains(t,msg.notes ,common.NetString("invalid status-code 200C") ,"There should be contained." )
+
+    // status phrase missing
+    garbage = []byte( "SIP/2.0 200 \r\n"         +
+                      "Via: testVia1\r\n"          +
+                      "From: testFrom\r\n"          +
+                      "To: testTo\t\t\r\n"  +
+                      "Call-ID: testCall-ID\r\n"    +
+                      "CSeq: testCSeq\r\n"          +
+                      "\r\n")
+    msg = sipMessage{}
+    msg.raw = garbage
+    err = msg.parseSIPHeader()
+    assert.Equal(t,uint16(200)                     ,msg.statusCode   ,"There should be." )
+    assert.Equal(t,common.NetString("")            ,msg.statusPhrase ,"There should be." )
+    assert.Equal(t,common.NetString("testTo")      ,msg.to     ,"There should be." )
+    assert.Equal(t,common.NetString("testFrom")    ,msg.from   ,"There should be." )
+    assert.Equal(t,common.NetString("testCSeq")    ,msg.cseq   ,"There should be." )
+    assert.Equal(t,common.NetString("testCall-ID") ,msg.callid ,"There should be." )
+    assert.Equal(t,  0 ,msg.hdr_start     ,"There should be  0." )
+    assert.Equal(t, 95,msg.hdr_len        ,"There should be 95." )
+    assert.Equal(t, 99,msg.bdy_start      ,"There should be 99." )
+    assert.Equal(t,  0 ,msg.contentlength ,"There should be  0." )
+
+    // status phrase missing (split error)
+    garbage = []byte( "SIP/2.0 200\r\n"          +
+                      "Via: testVia1\r\n"        +
+                      "From: testFrom\r\n"       +
+                      "To: testTo\t\t\r\n"       +
+                      "Call-ID: testCall-ID\r\n" +
+                      "CSeq: testCSeq\r\n"       +
+                      "\r\n")
+    msg = sipMessage{}
+    msg.raw = garbage
+    err = msg.parseSIPHeader()
+    assert.Equal(t,"malformed packet", fmt.Sprintf("%s",err)   ,"There should be." )
+    assert.Contains(t,msg.notes ,common.NetString("start line parse error.") ,"There should be contained." )
+
+    // Toomany SP at start line
+    garbage = []byte( "SIP/2.0  183  Session Progress\r\n" +
+                      "Via: testVia1,\r\n"               +
+                      " testVia2, \r\n"                  +
+                      " testVia3,  testVia4\r\n"         +
+                      "From: testFrom\r\n"               +
+                      "To  \t :\t  testTo\t\t\r\n"       +
+                      "Call-ID: testCall-ID\r\n"         +
+                      "CSeq: testCSeq\r\n"               +
+                      "Via: testVia5,testVia6\r\n"       +
+                      "\r\n")
+    msg = sipMessage{}
+    msg.raw = garbage
+    err = msg.parseSIPHeader()
+    assert.Equal(t,nil                                        , err            ,"There should be no error." )
+    assert.Equal(t,uint16(999)                               ,msg.statusCode   ,"There should be." )
+    assert.Equal(t,common.NetString("183  Session Progress") ,msg.statusPhrase ,"There should be." )
+    assert.Equal(t,common.NetString("testTo")      ,msg.to     ,"There should be." )
+    assert.Equal(t,common.NetString("testFrom")    ,msg.from   ,"There should be." )
+    assert.Equal(t,common.NetString("testCSeq")    ,msg.cseq   ,"There should be." )
+    assert.Equal(t,common.NetString("testCall-ID") ,msg.callid ,"There should be." )
+    assert.Equal(t,  0 ,msg.hdr_start     ,"There should be   0." )
+    assert.Equal(t,179 ,msg.hdr_len       ,"There should be 179." )
+    assert.Equal(t,183 ,msg.bdy_start     ,"There should be 183." )
+    assert.Equal(t,  0 ,msg.contentlength ,"There should be   0." )
+
+    // Toomany SP at start line
+    garbage = []byte( "INVITE testRequstURI SIP/2.0\r\n" +
+                      "Via: testVia1,\r\n"               +
+                      " testVia2, \r\n"                  +
+                      " testVia3,  testVia4\r\n"         +
+                      "From: testFrom\r\n"               +
+                      "To  \t :\t  testTo\t\t\r\n"       +
+                      "Call-ID: testCall-ID\r\n"         +
+                      "CSeq: testCSeq\r\n"               +
+                      "Via: testVia5,testVia6\r\n"       +
+                      "\r\n")
+    msg = sipMessage{}
+    msg.raw = garbage
+    err = msg.parseSIPHeader()
+    assert.Equal(t,nil                               , err             ,"There should be no error." )
+    assert.Equal(t,uint16(0)                         ,msg.statusCode   ,"There should be nill." )
+    assert.Equal(t,(common.NetString)(nil)           ,msg.statusPhrase ,"There should be nill." )
+    assert.Equal(t,common.NetString("INVITE")        ,msg.method       ,"There should be INVITE." )
+    assert.Equal(t,common.NetString("testRequstURI") ,msg.requestUri   ,"There should be testRequstURI." )
+    assert.Equal(t,common.NetString("testTo")      ,msg.to     ,"There should be." )
+    assert.Equal(t,common.NetString("testFrom")    ,msg.from   ,"There should be." )
+    assert.Equal(t,common.NetString("testCSeq")    ,msg.cseq   ,"There should be." )
+    assert.Equal(t,common.NetString("testCall-ID") ,msg.callid ,"There should be." )
+    assert.Equal(t,  0 ,msg.hdr_start     ,"There should be   0." )
+    assert.Equal(t,177 ,msg.hdr_len       ,"There should be 177." )
+    assert.Equal(t,181 ,msg.bdy_start     ,"There should be 181." )
+    assert.Equal(t,  0 ,msg.contentlength ,"There should be   0." )
+
+    // content-type and content-length missing
+    garbage = []byte( "SIP/2.0 183 Session Progress\r\n" +
+                      "Via: testVia1\r\n"                +
+                      "From: testFrom\r\n"               +
+                      "To:  testTo\t\t\r\n"              +
+                      "Call-ID: testCall-ID\r\n"         +
+                      "CSeq: testCSeq\r\n"               +
+                      "\r\n"                             +
+                      "v=0\r\n"                          +
+                      "o=- 0 0 IN IP4 10.0.0.1\r\n"      +
+                      "s=-\r\n"                          +
+                      "c=IN IP4 10.0.0.1\r\n"            +
+                      "t=0 0\r\n"                        +
+                      "m=audio 5012 RTP/AVP 0\r\n"       +
+                      "a=rtpmap:0 PCMU/8000\r\n")
+    msg = sipMessage{}
+    msg.raw = garbage
+    err = msg.parseSIPHeader()
+    assert.Equal(t,nil        , err                     , "There should be no error." )
+    assert.Equal(t,uint16(183)                          ,msg.statusCode   ,"There should be." )
+    assert.Equal(t,common.NetString("Session Progress") ,msg.statusPhrase ,"There should be." )
+    assert.Equal(t,  0 ,msg.hdr_start     ,"There should be   0." )
+    assert.Equal(t,112 ,msg.hdr_len       ,"There should be 112." )
+    assert.Equal(t,116 ,msg.bdy_start     ,"There should be 116." )
+    assert.Equal(t,  0 ,msg.contentlength ,"There should be   0." )
+    assert.Equal(t,(map[string]*map[string][]common.NetString)(nil) ,msg.body ,"There should be nill." )
+
+    // content-length missing
+    garbage = []byte( "SIP/2.0 183 Session Progress\r\n"  +
+                      "Via: testVia1\r\n"                 +
+                      "From: testFrom\r\n"                +
+                      "To: testTo\t\t\r\n"                +
+                      "Content-Type: application/sdp\r\n" +
+                      "Call-ID: testCall-ID\r\n"          +
+                      "CSeq: testCSeq\r\n"                +
+                      "\r\n"                              +
+                      "v=0\r\n"                           + //24-29  5 
+                      "o=- 0 0 IN IP4 10.0.0.1\r\n"       + //24-49 25  30
+                      "s=-\r\n"                           + //24-29  5  35
+                      "c=IN IP4 10.0.0.1\r\n"             + //24-43 19  54
+                      "t=0 0\r\n"                         + //24-31  7  61
+                      "m=audio 5012 RTP/AVP 0\r\n"        + //24-48 24  85
+                      "a=rtpmap:0 PCMU/8000\r\n")           //24-46 22 107
+    msg = sipMessage{}
+    msg.raw = garbage
+    err = msg.parseSIPHeader()
+    assert.Equal(t,nil        , err                     , "There should be no error." )
+    assert.Equal(t,uint16(183)                          ,msg.statusCode   ,"There should be." )
+    assert.Equal(t,common.NetString("Session Progress") ,msg.statusPhrase ,"There should be." )
+    assert.Equal(t,  0 ,msg.hdr_start     ,"There should be   0." )
+    assert.Equal(t,142 ,msg.hdr_len       ,"There should be 142." )
+    assert.Equal(t,146 ,msg.bdy_start     ,"There should be 146." )
+    assert.Equal(t,107 ,msg.contentlength ,"There should be 107." )
+    assert.Equal(t,(map[string]*map[string][]common.NetString)(nil) ,msg.body ,"There should be nill." )
+
+    // too large content-length actually byte length
+    garbage = []byte( "SIP/2.0 183 Session Progress\r\n" +
+                      "Via: testVia1,\r\n"               +
+                      " testVia2, \r\n"                  +
+                      " testVia3,  testVia4\r\n"         +
+                      "From: testFrom\r\n"               +
+                      "To  \t :\t  testTo\t\t\r\n"       +
+                      "Call-ID: testCall-ID\r\n"         +
+                      "CSeq: testCSeq\r\n"               +
+                      "Via: testVia5,testVia6\r\n"       +
+                      "Content-Type: application/sdp\r\n"+
+                      "Content-length: 134\r\n"          +
+                      "\r\n"                             +
+                      "v=0\r\n"                          +
+                      "o=- 0 0 IN IP4 10.0.0.1\r\n"      +
+                      "s=-\r\n"                          +
+                      "c=IN IP4 10.0.0.1\r\n"            +
+                      "t=0 0\r\n"                        +
+                      "m=audio 5012 RTP/AVP 0\r\n"       +
+                      "a=rtpmap:0 PCMU/8000\r\n")
+    msg = sipMessage{}
+    msg.raw = garbage
+    err = msg.parseSIPHeader()
+    assert.Equal(t,nil        , err                     , "There should be no error." )
+    assert.Equal(t,uint16(183)                          ,msg.statusCode   ,"There should be." )
+    assert.Equal(t,common.NetString("Session Progress") ,msg.statusPhrase ,"There should be." )
+    assert.Equal(t,common.NetString("testTo")      ,msg.to     ,"There should be." )
+    assert.Equal(t,common.NetString("testFrom")    ,msg.from   ,"There should be." )
+    assert.Equal(t,common.NetString("testCSeq")    ,msg.cseq   ,"There should be." )
+    assert.Equal(t,common.NetString("testCall-ID") ,msg.callid ,"There should be." )
+    assert.Equal(t,  0 ,msg.hdr_start     ,"There should be -1." )
+    assert.Equal(t,229 ,msg.hdr_len       ,"There should be -1." )
+    assert.Equal(t,233 ,msg.bdy_start     ,"There should be -1." )
+    assert.Equal(t, -1 ,msg.contentlength ,"There should be -1." )
+    assert.Equal(t,(map[string]*map[string][]common.NetString)(nil) ,msg.body ,"There should be nill." )
+
+    // normal case response
+    garbage = []byte( "SIP/2.0 183 Session Progress\r\n" +
+                      "Via: testVia1,\r\n"               +
+                      " testVia2, \r\n"                  +
+                      " testVia3,  testVia4\r\n"         +
+                      "From: testFrom\r\n"               +
+                      "To  \t :\t  testTo\t\t\r\n"       +
+                      "Call-ID: testCall-ID\r\n"         +
+                      "CSeq: testCSeq\r\n"               +
+                      "Via: testVia5,testVia6\r\n"       +
+                      "Content-Type: application/sdp\r\n"+
+                      "Content-length: 107\r\n"           +
+                      "\r\n"                             +
+                      "v=0\r\n"                          +
+                      "o=- 0 0 IN IP4 10.0.0.1\r\n"      +
+                      "s=-\r\n"                          +
+                      "c=IN IP4 10.0.0.1\r\n"            +
+                      "t=0 0\r\n"                        +
+                      "m=audio 5012 RTP/AVP 0\r\n"       +
+                      "a=rtpmap:0 PCMU/8000\r\n")
+    msg = sipMessage{}
+    msg.raw = garbage
+    err = msg.parseSIPHeader()
+    assert.Equal(t,nil        , err                     , "There should be no error." )
+    assert.Equal(t,uint16(183)                          ,msg.statusCode   ,"There should be." )
+    assert.Equal(t,common.NetString("Session Progress") ,msg.statusPhrase ,"There should be." )
+    assert.Equal(t,common.NetString("testTo")      ,msg.to     ,"There should be." )
+    assert.Equal(t,common.NetString("testFrom")    ,msg.from   ,"There should be." )
+    assert.Equal(t,common.NetString("testCSeq")    ,msg.cseq   ,"There should be." )
+    assert.Equal(t,common.NetString("testCall-ID") ,msg.callid ,"There should be." )
+    assert.Equal(t,  0 ,msg.hdr_start     ,"There should be -1." )
+    assert.Equal(t,229 ,msg.hdr_len       ,"There should be -1." )
+    assert.Equal(t,233 ,msg.bdy_start     ,"There should be -1." )
+    assert.Equal(t,107 ,msg.contentlength ,"There should be 107." )
+    assert.Equal(t,(map[string]*map[string][]common.NetString)(nil) ,msg.body ,"There should be nill." )
 }
 
 func TestParseSIPHeaderToMap(t *testing.T){

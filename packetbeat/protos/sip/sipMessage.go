@@ -152,13 +152,36 @@ func (msg *sipMessage) parseSIPHeader() (err error){
         return nil
     }
    
-    // この時点でSIPパケットじゃないことは確定
     msg.hdr_len  =hdr_end - hdr_start
     msg.bdy_start=bdy_start
 
     // 正常系処理
     // SIP
-    headers, first_lines:=msg.parseSIPHeaderToMap(cutPosS,cutPosE)
+    headers, start_line:=msg.parseSIPHeaderToMap(cutPosS,cutPosE)
+
+    // リクエストかレスポンスかを判定
+    if len(start_line) != 3{
+        msg.notes = append(msg.notes,common.NetString("start line parse error."))
+        return fmt.Errorf("malformed packet")
+    }
+
+    msg.isRequest = strings.Contains(start_line[2],"SIP/2.0")
+    if msg.isRequest {
+        msg.method    =common.NetString(start_line[0])
+        msg.requestUri=common.NetString(start_line[1])
+    }else if strings.Contains(start_line[0],"SIP/2.0") { // Response
+        parsedStatusCode,err := strconv.ParseInt(start_line[1],10,16)
+        if err !=nil {
+            msg.statusCode  =uint16(999)
+            msg.notes = append(msg.notes,common.NetString(fmt.Sprintf("invalid status-code %s",start_line[1])))
+        }else{
+            msg.statusCode  =uint16(parsedStatusCode)
+        }
+        msg.statusPhrase=common.NetString(strings.TrimSpace(start_line[2]))
+    }else{
+        msg.notes = append(msg.notes,common.NetString("malformed packet. this is not sip message."))
+        return fmt.Errorf("malformed packet(this is not sip message)")
+    }
 
     // mandatory header fields check
     to_array         , existTo          := (*headers)["to"          ]
@@ -168,7 +191,6 @@ func (msg *sipMessage) parseSIPHeader() (err error){
     maxfrowards_array, existMaxForwards := (*headers)["max-forwards"]
     via_array        , existVia         := (*headers)["via"         ]
 
-    // TODO: 処理をきちんとかく
     // 必須ヘッダ不足
     if existTo {
         msg.to    =getLastElementStrArray(to_array)
@@ -200,32 +222,14 @@ func (msg *sipMessage) parseSIPHeader() (err error){
         msg.notes = append(msg.notes,common.NetString("mandatory header [Via] does not exist."))
     }
 
-
+    // headers value update
     msg.headers=headers
 
+    // unused
     _=maxfrowards_array
     _=via_array
 
-    // リクエストかレスポンスかを判定
-    msg.isRequest = strings.Contains(first_lines[2],"SIP/2.0")
-    if msg.isRequest {
-        msg.method    =common.NetString(first_lines[0])
-        msg.requestUri=common.NetString(first_lines[1])
-    }else if strings.Contains(first_lines[0],"SIP/2.0") { // Response
-        parsedStatusCode,err := strconv.ParseInt(first_lines[1],10,16)
-        if err !=nil {
-            msg.statusCode  =uint16(999)
-            msg.statusPhrase=common.NetString("Unknown Status")
-        }else{
-            msg.statusCode  =uint16(parsedStatusCode)
-            msg.statusPhrase=common.NetString(first_lines[2])
-        }
-    }else{
-        // TODO:Malformed Packets
-        return fmt.Errorf("malformed packet(this is not sip messages)")
-    }
-
-    // Content-Lenghtは0でいったん初期化
+    // Content-Lenght initialized to 0
     msg.contentlength = 0
     contenttype_array  , existContentType   := (*headers)["content-type"]
     contentlength_array, existContentLength := (*headers)["content-length"]
@@ -233,23 +237,25 @@ func (msg *sipMessage) parseSIPHeader() (err error){
 
     contentlength:=0
 
-    // Content-Lengthが存在する場合
-    // 取得を試みる。失敗した場合は0でリセットする
-    if existContentLength{
-        raw_cnt_len,err_cnt_len := strconv.ParseInt(string(getLastElementStrArray(contentlength_array)),10,64)
-        contentlength=int(raw_cnt_len)
+    if existContentType{
+        // Content-Lengthが存在する場合
+        // 取得を試みる。失敗した場合は0でリセットする
+        if existContentLength{
+            raw_cnt_len,err_cnt_len := strconv.ParseInt(string(getLastElementStrArray(contentlength_array)),10,64)
+            contentlength=int(raw_cnt_len)
 
-        // Content-Lengthが不正文字列の場合は
-        // 無視して0で初期化
-        if err_cnt_len!= nil{
-            contentlength=0
+            // Content-Lengthが不正文字列の場合は
+            // 無視して0で初期化
+            if err_cnt_len!= nil{
+                contentlength=0
+            }
+        } else {
+            contentlength=byte_len - bdy_start
         }
-    }
-
+    } else {
     // Content-typeはBodyがある場合は存在するはずなので
     // Content-Typeが存在しない場合はBody無しとして
     // ヘッダの後のデータは無視する(RFC 3261 20.15)
-    if !existContentType{
         contentlength=0
     }
 

@@ -85,15 +85,15 @@ func newPacket(t common.IPPortTuple, payload []byte) *protos.Packet {
     }
 }
 
- // Verify that an empty packet is safely handled (no panics).
- func TestParseUdp_emptyPacket(t *testing.T) {
-     store := &eventStore{}
-     sip := newSIP(store, testing.Verbose())
-     packet := newPacket(forward, []byte{})
-     sip.ParseUDP(packet)
-     assert.Empty(t, sip.fragmentBuffer.Size(), "There should be no transactions.")
-     assert.True(t, store.empty(), "No result should have been published.")
- }
+// Verify that an empty packet is safely handled (no panics).
+func TestParseUdp_emptyPacket(t *testing.T) {
+    store := &eventStore{}
+    sip := newSIP(store, testing.Verbose())
+    packet := newPacket(forward, []byte{})
+    sip.ParseUDP(packet)
+    assert.Empty(t, sip.fragmentBuffer.Size(), "There should be no transactions.")
+    assert.True(t, store.empty(), "No result should have been published.")
+}
 
 
 // Verify that a malformed packet is safely handled (no panics).
@@ -226,7 +226,6 @@ func TestParseUdp_responsePacketWithSDP(t *testing.T){
     if store.size() == 1{
         fields:=store.events[0].Fields
         headers,_:=fields["sip.headers"].(common.MapStr)
-        // body:=fields["sip.body"]
         // mandatories
         assert.Equal(t, "Session Progess",
                         fields["sip.status-phrase"], 
@@ -291,8 +290,8 @@ func TestParseUdp_responsePacketWithoutSDP(t *testing.T){
                        "CSeq: 1 INVITE\r\n"                                         +
                        "Content-Length: 0\r\n"                                      +
                        "Date: Mon, 04 Sep 2017 02:29:54 GMT\r\n"                    +
-                       "Proxy-Authenticate: Digest realm=\"example.com\","          + // 改行していない
-                       " domain=\"sip:192.168.0.1\", nonce=\"15044921123142536\","  + // 改行していない
+                       "Proxy-Authenticate: Digest realm=\"example.com\","          +
+                       " domain=\"sip:192.168.0.1\", nonce=\"15044921123142536\","  +
                        " opaque=\"\", stale=FALSE, algorithm=MD5\r\n"               +
                        "\r\n")
     packet := newPacket(forward, garbage)
@@ -321,8 +320,8 @@ func TestParseUdp_PacketFragmentedInBody(t *testing.T) {
                          "Privacy: none\r\n"                                                         +
                          "P-Preferred-Identity: <sip:hogehoge@example.com>\r\n"                      +
                          "User-Agent: Some User-Agent\r\n"                                           +
-                         "Proxy-Authorization: Digest username=\"hogehoge\", realm=\"example.com\"," + // 改行していない
-                         " nonce=\"15044921123142536\", uri=\"sip:0312345678@192.168.0.1:5060\","    + // 改行していない
+                         "Proxy-Authorization: Digest username=\"hogehoge\", realm=\"example.com\"," +
+                         " nonce=\"15044921123142536\", uri=\"sip:0312345678@192.168.0.1:5060\","    +
                          " response=\"358a640a266ad4eb3ed82f0746c82dfd\"\r\n"                        +
                          "\r\n"                                                                      +
                          "v=0\r\n" )
@@ -368,8 +367,8 @@ func TestParseUdp_PacketFragmentedInHeader(t *testing.T) {
                          "Privacy: none\r\n"                                                         +
                          "P-Preferred-Identity: <sip:hogehoge@example.com>\r\n"                      +
                          "User-Agent: Some User-Agent\r\n"                                           +
-                         "Proxy-Authorization: Digest username=\"hogehoge\", realm=\"example.com\"," + // 改行していない
-                         " nonce=\"15044921123142536\", uri=\"sip:0312345678@192.168.0.1:5060\","    + // 改行していない
+                         "Proxy-Authorization: Digest username=\"hogehoge\", realm=\"example.com\"," +
+                         " nonce=\"15044921123142536\", uri=\"sip:0312345678@192.168.0.1:5060\","    +
                          " response=\"358a640a266ad4eb3ed82f0746c82dfd\"\r\n"                        +
                          "\r\n"                                                                      +
                          "v=0\r\n"                                                                   +
@@ -391,52 +390,4 @@ func TestParseUdp_PacketFragmentedInHeader(t *testing.T) {
     assert.Equal(t, 0, sip.fragmentBuffer.Size(), "There should be no transaction.")
     assert.Equal(t, 1, store.size(), "There should be one message published.")
 }
-
-// // Verify that the lone request packet is parsed.
-// func TestParseUdp_requestPacket(t *testing.T) {
-//     store := &eventStore{}
-//     sip := newSIP(store, testing.Verbose())
-//     packet := newPacket(forward, test1.messages[0])
-//     sip.ParseUDP(packet)
-//     assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
-//     assert.True(t, store.empty(), "No result should have been published.")
-// }
-// 
-// func TestParseUdp_responsePacket(t *testing.T) {
-//     store := &eventStore{}
-//     sip := newSIP(store, testing.Verbose())
-//     packet := newPacket(reverse, test1.messages[1])
-//     sip.ParseUDP(packet)
-//     assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
-//     assert.True(t, store.empty(), "No result should have been published.")
-// }
-// 
-// func TestParseUdp_requestPacket2(t *testing.T) {
-//     store := &eventStore{}
-//     sip := newSIP(store, testing.Verbose())
-//     packet := newPacket(reverse, test1.messages[2])
-//     sip.ParseUDP(packet)
-//     assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
-//     assert.True(t, store.empty(), "No result should have been published.")
-// }
-// 
-// func TestParseUdp_responsePacket2(t *testing.T) {
-//     store := &eventStore{}
-//     sip := newSIP(store, testing.Verbose())
-//     packet := newPacket(reverse, test1.messages[3])
-//     sip.ParseUDP(packet)
-//     assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
-//     assert.True(t, store.empty(), "No result should have been published.")
-// }
-// 
-// 
-// func TestParseUdp_responseFragmentedPacket2(t *testing.T) {
-//     store := &eventStore{}
-//     sip := newSIP(store, testing.Verbose())
-//     packet1 := newPacket(reverse, test2.messages[0])
-//     packet2 := newPacket(reverse, test2.messages[1])
-//     sip.ParseUDP(packet1)
-//     sip.ParseUDP(packet2)
-// }
-
 

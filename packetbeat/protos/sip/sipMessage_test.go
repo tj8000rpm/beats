@@ -42,7 +42,7 @@ func TestSeparatedStrings(t *testing.T) {
     assert.Equal(t,"\"aaaaa,", fmt.Sprintf("%s",(*separatedStrings)[1]), "There should be [\"aaaaa,].")
 }
 
-func TestParseSIPHeader(t *testing.T){ // (err error){
+func TestParseSIPHeader(t *testing.T){ 
     var garbage []byte
     var err error
     var msg sipMessage
@@ -131,7 +131,7 @@ func TestParseSIPHeader(t *testing.T){ // (err error){
     assert.Equal(t,(common.NetString)(nil) ,msg.callid ,"There should be." )
     assert.Contains(t,msg.notes ,common.NetString("malformed packet. this is not sip message.")      ,"There should be contained." )
 
-    // invalid status number
+    // invalid status number(String)
     garbage = []byte( "SIP/2.0 200C NG\r\n"         +
                       "Via: testVia1\r\n"           +
                       "From: testFrom\r\n"          +
@@ -186,7 +186,7 @@ func TestParseSIPHeader(t *testing.T){ // (err error){
     assert.Equal(t,"malformed packet", fmt.Sprintf("%s",err)   ,"There should be." )
     assert.Contains(t,msg.notes ,common.NetString("start line parse error.") ,"There should be contained." )
 
-    // Toomany SP at start line
+    // Toomany SP at start line deliminater
     garbage = []byte( "SIP/2.0  183  Session Progress\r\n" +
                       "Via: testVia1,\r\n"               +
                       " testVia2, \r\n"                  +
@@ -212,7 +212,7 @@ func TestParseSIPHeader(t *testing.T){ // (err error){
     assert.Equal(t,183 ,msg.bdy_start     ,"There should be 183." )
     assert.Equal(t,  0 ,msg.contentlength ,"There should be   0." )
 
-    // Toomany SP at start line
+    // Toomany SP deliminater at start line
     garbage = []byte( "INVITE testRequstURI SIP/2.0\r\n" +
                       "Via: testVia1,\r\n"               +
                       " testVia2, \r\n"                  +
@@ -431,7 +431,7 @@ func TestParseSIPHeaderToMap(t *testing.T){
     assert.Equal(t,"testVia5"    , fmt.Sprintf("%s",(*headers)["via"    ][4]) , "There should be." )
     assert.Equal(t,"testVia6"    , fmt.Sprintf("%s",(*headers)["via"    ][5]) , "There should be." )
 }
-func TestParseSIPBody(t *testing.T) { // (err error){
+func TestParseSIPBody(t *testing.T) { 
     var err error
     var garbage []byte
     msg := sipMessage{}

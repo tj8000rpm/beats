@@ -33,9 +33,9 @@ type sipPlugin struct {
 func (sip *sipPlugin) init(results protos.Reporter, config *sipConfig) error {
     sip.setFromConfig(config)
     sip.fragmentBuffer = common.NewCacheWithRemovalListener(
-        sip.fragmentBufferTimeout,              // タイムアウト時間の設定
-        protos.DefaultTransactionHashSize,      // ハッシュサイズの設定
-        func(k common.Key, v common.Value) {    // remove時のCallbackFunction
+        sip.fragmentBufferTimeout,              // buffer time for fragmented udp packets.
+        protos.DefaultTransactionHashSize,      // buffer size for fragmented udp packets.
+        func(k common.Key, v common.Value) {    // callback function when remove buffer.
             buffer, ok := v.(*sipBuffer)
             if !ok {
                 logp.Err("Expired value is not a *sipBuffer.")
@@ -50,13 +50,14 @@ func (sip *sipPlugin) init(results protos.Reporter, config *sipConfig) error {
     return nil
 }
 
-// configの値からSIPとして扱うポートとかいろいろ設定できるっぽい
+// Set config values sip ports and  recieve packet buffer time for fragmented udp packets.
 func (sip *sipPlugin) setFromConfig(config *sipConfig) error {
     sip.ports                 = config.Ports
     sip.fragmentBufferTimeout = config.BufferTimeout
     return nil
 }
 
+// Getter : instance Ports int slice
 func (sip *sipPlugin) GetPorts() []int {
     return sip.ports
 }

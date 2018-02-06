@@ -2,7 +2,6 @@ package sip
 
 import (
     "testing"
-    "fmt"
 
     "github.com/elastic/beats/libbeat/common"
 

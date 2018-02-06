@@ -41,7 +41,11 @@ func (sip *sipPlugin) init(results protos.Reporter, config *sipConfig) error {
                 logp.Err("Expired value is not a *sipBuffer.")
                 return
             }
-            sip.expireBuffer(buffer)
+
+            msg := sip.expireBuffer(buffer)
+            if msg != nil {
+                sip.publishMessage(msg)
+            }
         })
     sip.fragmentBuffer.StartJanitor(sip.fragmentBufferTimeout)
 
@@ -88,7 +92,7 @@ func (sip *sipPlugin) deleteBuffer(k hashableSIPTuple) *sipBuffer {
     return nil
 }
 // 受信バッファに入ったメッセージがタイムアウトした時の処理
-func (sip *sipPlugin) expireBuffer(t *sipBuffer) {
+func (sip *sipPlugin) expireBuffer(t *sipBuffer) *sipMessage {
     debugf("%s %s", "bufferTimeout.Error()", t.tuple.String())
     msg:=t.message
     switch msg.getMessageStatus(){
@@ -98,10 +102,11 @@ func (sip *sipPlugin) expireBuffer(t *sipBuffer) {
         msg.notes = append(msg.notes,common.NetString(fmt.Sprintf("Buffer timeout: Could not reveive all content length.")))
     case SIP_STATUS_REJECTED: 
         messageIgnored.Add(1)
-        return
+        return nil
     }
-    sip.publishMessage(msg)
+
     bufferTimeout.Add(1)
+    return msg
 }
 
 func (sip *sipPlugin) ConnectionTimeout() time.Duration {

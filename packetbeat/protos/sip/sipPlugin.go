@@ -97,6 +97,7 @@ func (sip *sipPlugin) expireBuffer(t *sipBuffer) {
     case SIP_STATUS_BODY_RECEIVING:
         msg.notes = append(msg.notes,common.NetString(fmt.Sprintf("Buffer timeout: Could not reveive all content length.")))
     case SIP_STATUS_REJECTED: 
+        messageIgnored.Add(1)
         return
     }
     sip.publishMessage(msg)

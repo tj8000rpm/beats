@@ -17,6 +17,8 @@ var (
 // Packetbeats monitoring metrics
 var (
     bufferTimeout  = monitoring.NewInt(nil, "sip.buffer_timeouted")
+    
+    messageIgnored = monitoring.NewInt(nil, "sip.message_ignored")
 )
 
 const maxHashableSipTupleRawSize = 16 + // ip addr (src) 128bit(ip v6)

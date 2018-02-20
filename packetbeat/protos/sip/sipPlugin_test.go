@@ -2,6 +2,8 @@ package sip
 
 import (
     "testing"
+    "fmt"
+    "net"
 
     "github.com/elastic/beats/libbeat/common"
 
@@ -121,7 +123,7 @@ func TestDeleteBuffer(t *testing.T) {
 
     // unexist key case, must be nil and shuld not be change buffer size.
     buf_p_nil:=sip.deleteBuffer(tuple_ng)
-    assert.Equal(t, (*sipBuffer)(nil) ,buf_p_nil  , "There should be nil." )
+    assert.Nil(t, buf_p_nil  , "There should be nil." )
     assert.Equal(t, 1 , sip.fragmentBuffer.Size() , "There should not change." )
     
     // exist key case
@@ -189,9 +191,35 @@ func TestExpireBuffer(t *testing.T) {// (t *sipBuffer) {
 }
 
 func TestConnectionTimeout(t *testing.T) {// () time.Duration {
+    sip:=sipPlugin{}
+    sip.fragmentBufferTimeout=999
+
+    assert.Equal(t, int(999), int(sip.ConnectionTimeout()) , "sip.fragmentBufferTimeout and ConnectionTimeout() should be same." )
 }
 
 func TestPublishMessage(t *testing.T) {// (msg *sipMessage) {
+    sip:=sipPlugin{}
+    ipTuple := common.NewIPPortTuple(4,
+        net.ParseIP("10.0.0.1"), 1111,
+        net.ParseIP("10.0.0.2"), 2222)
+    msg:=sipMessage{transport:0, raw:common.NetString("test raw string"),
+                    tuple: ipTuple , method: common.NetString("INVITE") ,
+                    requestUri: common.NetString("sip:test"),
+                    statusCode: uint16(200), statusPhrase: common.NetString("OK"),
+                    from: common.NetString("from"), to: common.NetString("to"),
+                    cseq: common.NetString("cseq"), callid: common.NetString("callid"),
+                    contentlength: 10}
+
+    // avoid to sip.results initialization error
+    sip.publishMessage(&msg)
+    assert.Nil(t, sip.results , "sip.results should still nil." )
+
+    // 
+    event:= &eventStore{}
+    //callback:= func(beat.Event){}
+    sip.results=event.publish
+    sip.publishMessage(&msg)
+    fmt.Printf("%s\n",event)
 }
 
 func TestSipTupleFromIPPort(t *testing.T) {// (t *common.IPPortTuple, trans transport) sipTuple {

@@ -58,6 +58,7 @@ type sipBuffer struct {
  **/
 
 func init() {
+    // Memo: Secound argment*New* is below New function.
     protos.Register("sip", New)
 }
 

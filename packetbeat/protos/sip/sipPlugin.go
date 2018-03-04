@@ -211,7 +211,7 @@ func (sip *sipPlugin) createSIPMessage(transp transport, rawData []byte) (msg *s
     return msg, nil
 }
 
-func (sip *sipPlugin) newBuffer(ts time.Time, tuple sipTuple, cmd common.CmdlineTuple,msg *sipMessage) *sipBuffer {
+func (sip *sipPlugin) newBuffer(ts time.Time, tuple sipTuple,msg *sipMessage) *sipBuffer {
     buffer := &sipBuffer{
         transport: tuple.transport,
         ts:        ts,
@@ -226,8 +226,7 @@ func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
     defer logp.Recover("Sip ParseUdp")
     packetSize := len(pkt.Payload)
 
-    debugf("Parsing packet addressed with %s of length %d.",
-        pkt.Tuple.String(), packetSize)
+    debugf("Parsing packet addressed with %s of length %d.", pkt.Tuple.String(), packetSize)
     sipTuple := sip.sipTupleFromIPPort(&pkt.Tuple, transportUDP)
     var buffer *sipBuffer
     buffer = sip.deleteBuffer(sipTuple.hashable())
@@ -272,7 +271,7 @@ func (sip *sipPlugin) ParseUDP(pkt *protos.Packet) {
     case SIP_STATUS_HEADER_RECEIVING, SIP_STATUS_BODY_RECEIVING:
         debugf("fragmented packet")
         if buffer == nil{
-            buffer = sip.newBuffer(sipMsg.ts, sipTuple, *sipMsg.cmdlineTuple, sipMsg)
+            buffer = sip.newBuffer(sipMsg.ts, sipTuple, sipMsg)
         }
         sip.addBuffer(sipTuple.hashable(),buffer)
         return

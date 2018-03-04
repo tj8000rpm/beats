@@ -48,13 +48,14 @@ func TestAddBuffer(t *testing.T) {
     hash2:=hashableSIPTuple{}
     hash2[0]=1
 
+    timeout:=time.Duration(3)*time.Second
     sip.fragmentBuffer = common.NewCacheWithRemovalListener(
-        /* buffer time for fragmented udp packets. */ 3000,
+        /* buffer time for fragmented udp packets. */ timeout,
         /* buffer size for fragmented udp packets. */ 10,
         func(k common.Key, v common.Value) {    // callback function when remove buffer.
             return
         })
-    sip.fragmentBuffer.StartJanitor(3000)
+    sip.fragmentBuffer.StartJanitor(timeout)
 
     assert.Equal(t, 0 , sip.fragmentBuffer.Size()                   , "There should be empty." )
     sip.addBuffer(hash,&buf)
@@ -75,13 +76,14 @@ func TestGetBuffer(t *testing.T) {
     _ = tuple_ng
     for i:=0;i<len(tuple_ok);i++{tuple_ok[i]=0xff}
 
+    timeout:=time.Duration(3)*time.Second
     sip.fragmentBuffer = common.NewCacheWithRemovalListener(
-        /* buffer time for fragmented udp packets. */ 7000,
+        /* buffer time for fragmented udp packets. */ timeout,
         /* buffer size for fragmented udp packets. */ 100,
         func(k common.Key, v common.Value) {    // callback function when remove buffer.
             return
         })
-    sip.fragmentBuffer.StartJanitor(7000)
+    sip.fragmentBuffer.StartJanitor(timeout)
 
     // before status check
     assert.Equal(t, 0 , sip.fragmentBuffer.Size() , "There should be empty." )
@@ -109,34 +111,33 @@ func TestDeleteBuffer(t *testing.T) {
     _ = tuple_ng
     for i:=0;i<len(tuple_ok);i++{tuple_ok[i]=0xff}
 
+    timeout:=time.Duration(3)*time.Second
     sip.fragmentBuffer = common.NewCacheWithRemovalListener(
-        /* buffer time for fragmented udp packets. */ 7000,
+        /* buffer time for fragmented udp packets. */ timeout,
         /* buffer size for fragmented udp packets. */ 1000,
         func(k common.Key, v common.Value) {    // callback function when remove buffer.
+            fmt.Print("----------------------- timeouted\n")
             return
         })
-    sip.fragmentBuffer.StartJanitor(7000)
+    sip.fragmentBuffer.StartJanitor(timeout)
 
     // before status check
     assert.Equal(t, 0 , sip.fragmentBuffer.Size() , "There should be empty." )
 
     // add the tuple
     sip.addBuffer(tuple_ok,&buf)
+    // check after status
+    assert.Equal(t, 1 , sip.fragmentBuffer.Size() , "There should be one element." )
+
     // unexist key case, must be nil and shuld not be change buffer size.
     buf_p_nil:=sip.deleteBuffer(tuple_ng)
     assert.Nil(t, buf_p_nil  , "There should be nil." )
     assert.Equal(t, 1 , sip.fragmentBuffer.Size() , "There should not change." )
 
-    // add the tuple
-    sip.addBuffer(tuple_ok,&buf)
-    // check after status
-    assert.Equal(t, 1 , sip.fragmentBuffer.Size() , "There should be one element." )
-    
     // exist key case
     buf_p:=sip.deleteBuffer(tuple_ok)
     assert.Equal(t, &buf , buf_p                  , "There should be same address." )
     assert.Equal(t, 0 , sip.fragmentBuffer.Size() , "There should be same tuple." )
-
 }
 
 func TestExpireBuffer(t *testing.T) {

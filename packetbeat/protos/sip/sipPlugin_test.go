@@ -354,7 +354,7 @@ func newSIP(store *eventStore, verbose bool) *sipPlugin {
 
     cfg, _ := common.NewConfigFrom(map[string]interface{}{
         "ports":               []int{serverPort},
-        "buffer_timeout":      2 * time.Second,
+        "buffer_timeout":      time.Duration(2)*time.Second,
     })
     sip, err := New(false, callback, cfg)
     if err != nil {

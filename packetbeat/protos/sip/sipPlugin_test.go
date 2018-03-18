@@ -22,10 +22,8 @@ func TestSetFromConfig(t *testing.T) {
     sip:=sipPlugin{}
     cfg:=sipConfig{}
     cfg.Ports=[]int{5060,5061}
-    cfg.BufferTimeout=30
 
     sip.setFromConfig(&cfg)
-    assert.Equal(t, 30   , int(sip.fragmentBufferTimeout) , "There should be 30." )
     assert.Equal(t, 5060 , sip.ports[0]                   , "There should be included 5060." )
     assert.Equal(t, 5061 , sip.ports[1]                   , "There should be included 5061." )
 }
@@ -39,169 +37,6 @@ func TestGetPorts(t *testing.T) {
     assert.Equal(t, 5061 , ports[1]                   , "There should be included 5061." )
     assert.Equal(t, 1123 , ports[2]                   , "There should be included 5061." )
     assert.Equal(t, 5555 , ports[3]                   , "There should be included 5061." )
-}
-
-func TestAddBuffer(t *testing.T) {
-    sip:=sipPlugin{}
-    buf:=sipBuffer{}
-    hash:=hashableSIPTuple{}
-    hash2:=hashableSIPTuple{}
-    hash2[0]=1
-
-    timeout:=time.Duration(3)*time.Second
-    sip.fragmentBuffer = common.NewCacheWithRemovalListener(
-        /* buffer time for fragmented udp packets. */ timeout,
-        /* buffer size for fragmented udp packets. */ 10,
-        func(k common.Key, v common.Value) {    // callback function when remove buffer.
-            return
-        })
-    sip.fragmentBuffer.StartJanitor(timeout)
-
-    assert.Equal(t, 0 , sip.fragmentBuffer.Size()                   , "There should be empty." )
-    sip.addBuffer(hash,&buf)
-    assert.Equal(t, 1 , sip.fragmentBuffer.Size()                   , "There should be one element." )
-    // dupulicate hash
-    sip.addBuffer(hash,&buf)
-    assert.Equal(t, 1 , sip.fragmentBuffer.Size()                   , "There should not change." )
-    // another hash
-    sip.addBuffer(hash2,&buf)
-    assert.Equal(t, 2 , sip.fragmentBuffer.Size()                   , "There should be two element." )
-}
-
-func TestGetBuffer(t *testing.T) {
-    sip:=sipPlugin{}
-    buf:=sipBuffer{transport: transportUDP}
-    tuple_ok:=hashableSIPTuple{}
-    tuple_ng:=hashableSIPTuple{}
-    _ = tuple_ng
-    for i:=0;i<len(tuple_ok);i++{tuple_ok[i]=0xff}
-
-    timeout:=time.Duration(3)*time.Second
-    sip.fragmentBuffer = common.NewCacheWithRemovalListener(
-        /* buffer time for fragmented udp packets. */ timeout,
-        /* buffer size for fragmented udp packets. */ 100,
-        func(k common.Key, v common.Value) {    // callback function when remove buffer.
-            return
-        })
-    sip.fragmentBuffer.StartJanitor(timeout)
-
-    // before status check
-    assert.Equal(t, 0 , sip.fragmentBuffer.Size() , "There should be empty." )
-
-    // add the tuple
-    sip.addBuffer(tuple_ok,&buf)
-    // check after status
-    assert.Equal(t, 1 , sip.fragmentBuffer.Size() , "There should be one element." )
-
-    buf_p:=sip.getBuffer(tuple_ok)
-    assert.Equal(t, &buf , buf_p                   , "There should be same address." )
-    assert.Equal(t, 1 , sip.fragmentBuffer.Size() , "There should be same tuple." )
-
-    // unexist key case, must be nil and shuld not be change buffer size.
-    buf_p_nil:=sip.getBuffer(tuple_ng)
-    assert.Equal(t, (*sipBuffer)(nil) ,buf_p_nil  , "There should be nil." )
-    assert.Equal(t, 1 , sip.fragmentBuffer.Size() , "There should not change." )
-}
-
-func TestDeleteBuffer(t *testing.T) {
-    sip:=sipPlugin{}
-    buf:=sipBuffer{transport: transportUDP}
-    tuple_ok:=hashableSIPTuple{}
-    tuple_ng:=hashableSIPTuple{}
-    _ = tuple_ng
-    for i:=0;i<len(tuple_ok);i++{tuple_ok[i]=0xff}
-
-    timeout:=time.Duration(3)*time.Second
-    sip.fragmentBuffer = common.NewCacheWithRemovalListener(
-        /* buffer time for fragmented udp packets. */ timeout,
-        /* buffer size for fragmented udp packets. */ 1000,
-        func(k common.Key, v common.Value) {    // callback function when remove buffer.
-            fmt.Print("----------------------- timeouted\n")
-            return
-        })
-    sip.fragmentBuffer.StartJanitor(timeout)
-
-    // before status check
-    assert.Equal(t, 0 , sip.fragmentBuffer.Size() , "There should be empty." )
-
-    // add the tuple
-    sip.addBuffer(tuple_ok,&buf)
-    // check after status
-    assert.Equal(t, 1 , sip.fragmentBuffer.Size() , "There should be one element." )
-
-    // unexist key case, must be nil and shuld not be change buffer size.
-    buf_p_nil:=sip.deleteBuffer(tuple_ng)
-    assert.Nil(t, buf_p_nil  , "There should be nil." )
-    assert.Equal(t, 1 , sip.fragmentBuffer.Size() , "There should not change." )
-
-    // exist key case
-    buf_p:=sip.deleteBuffer(tuple_ok)
-    assert.Equal(t, &buf , buf_p                  , "There should be same address." )
-    assert.Equal(t, 0 , sip.fragmentBuffer.Size() , "There should be same tuple." )
-}
-
-func TestExpireBuffer(t *testing.T) {
-    var msg_p *sipMessage
-    sip:=sipPlugin{}
-
-    buf:=sipBuffer{transport: transportUDP}
-    _ = sip
-
-    /*** Missing header start case : message should reject ***/
-    bufferTimeout.Set(int64(0))
-    messageIgnored.Set(int64(0))
-    ignored_msg:=sipMessage{hdr_start: -1,hdr_len: -1,contentlength: -1}
-    buf.message = &ignored_msg
-    // initialized check
-    assert.Equal(t, int64(0) , bufferTimeout.Get() , "The counter should be initialized with zeros." )
-    assert.Equal(t, int64(0) , messageIgnored.Get() , "The counter should be initialized with zeros." )
-    msg_p=sip.expireBuffer(&buf)
-    // counter values check
-    assert.Equal(t, int64(0) , bufferTimeout.Get() , "The counter should not be changed." )
-    assert.Equal(t, int64(1) , messageIgnored.Get() , "The counter should be increased by one." )
-    // nil return check
-    assert.Equal(t, (*sipMessage)(nil) , msg_p , "The counter should be increased by one." )
-
-    /*** Header incomplete case ***/
-    hdr_incomplete_msg:=sipMessage{hdr_start: 0,hdr_len: -1,contentlength: -1}
-    bufferTimeout.Set(int64(0))
-    messageIgnored.Set(int64(0))
-    buf.message = &hdr_incomplete_msg
-    // initialized check
-    assert.Equal(t, int64(0) , bufferTimeout.Get() , "The counter should be initialized with zeros." )
-    assert.Equal(t, int64(0) , messageIgnored.Get() , "The counter should be initialized with zeros." )
-    msg_p=sip.expireBuffer(&buf)
-    // counter values check
-    assert.Equal(t, int64(1) , bufferTimeout.Get() , "The counter should be increased by one." )
-    assert.Equal(t, int64(0) , messageIgnored.Get() , "The counter should not be changed." )
-    // note value check
-    assert.Contains(t,msg_p.notes ,common.NetString("Buffer timeout: Could not reveive all messages.")  ,"There should be contained." )
-    // returned message pointer check
-    assert.Equal(t, &hdr_incomplete_msg , msg_p , "The counter should be increased by one." )
-
-    /*** Body incomplete case ***/
-    bdy_incomplete_msg:=sipMessage{hdr_start: 0,hdr_len: 20,contentlength: -1}
-    bufferTimeout.Set(int64(0))
-    messageIgnored.Set(int64(0))
-    buf.message = &bdy_incomplete_msg
-    // initialized check
-    assert.Equal(t, int64(0) , bufferTimeout.Get() , "The counter should be initialized with zeros." )
-    assert.Equal(t, int64(0) , messageIgnored.Get() , "The counter should be initialized with zeros." )
-    msg_p=sip.expireBuffer(&buf)
-    // counter values check
-    assert.Equal(t, int64(1) , bufferTimeout.Get() , "The counter should be increased by one." )
-    assert.Equal(t, int64(0) , messageIgnored.Get() , "The counter should not be changed." )
-    // note value check
-    assert.Contains(t,msg_p.notes ,common.NetString("Buffer timeout: Could not reveive all content length.") ,"There should be contained." )
-    // returned message pointer check
-    assert.Equal(t, &bdy_incomplete_msg , msg_p , "The counter should be increased by one." )
-}
-
-func TestConnectionTimeout(t *testing.T) {
-    sip:=sipPlugin{}
-    sip.fragmentBufferTimeout=999
-
-    assert.Equal(t, int(999), int(sip.ConnectionTimeout()) , "sip.fragmentBufferTimeout and ConnectionTimeout() should be same." )
 }
 
 func TestPublishMessage(t *testing.T) {
@@ -235,27 +70,6 @@ func TestPublishMessage(t *testing.T) {
     assert.Equal(t, raw_text   , store.events[0].Fields["sip.raw"]          , "Compare published packet and stored data." )
 }
 
-func TestSipTupleFromIPPort(t *testing.T) {
-    sip:=sipPlugin{}
-    ipTuple:=common.IPPortTuple{SrcIP:net.IP("10.1.2.3"),DstIP:net.IP("11.2.3.4"),SrcPort:1234,DstPort:5678,IPLength:4}
-    var trans transport
-    trans=transportTCP
-
-    withPlugin:=sip.sipTupleFromIPPort(&ipTuple,trans)
-
-    withRaw:=sipTuple{
-        ipLength:  ipTuple.IPLength,
-        SrcIP:     ipTuple.SrcIP,
-        DstIP:     ipTuple.DstIP,
-        SrcPort:   ipTuple.SrcPort,
-        DstPort:   ipTuple.DstPort,
-        transport: trans,
-    }
-    withRaw.computeHashebles()
-    
-    assert.Equal(t, withRaw, withPlugin, "Compare published packet and stored data." )
-}
-
 func TestCreateSIPMessage(t *testing.T) {
     sip:=sipPlugin{}
     var trans transport
@@ -274,33 +88,6 @@ func TestCreateSIPMessage(t *testing.T) {
     assert.Equal(t, -1, sipMsg.contentlength, "Initialization check." )
 }
 
-func TestNewBuffer(t *testing.T) {
-    sip:=sipPlugin{}
-
-    ts:=time.Unix(1520002800, 0)
-    cp_ts,_:=time.Parse("2006-01-02 15:04:05 MST", "2018-03-03 00:00:00 JST")
-    ipTuple:=common.IPPortTuple{SrcIP:net.IP("10.1.2.3"),DstIP:net.IP("11.2.3.4"),SrcPort:1234,DstPort:5678,IPLength:4}
-    var trans transport
-    trans=255
-
-    tuple:=sipTuple{
-        ipLength:  ipTuple.IPLength,
-        SrcIP:     ipTuple.SrcIP,
-        DstIP:     ipTuple.DstIP,
-        SrcPort:   ipTuple.SrcPort,
-        DstPort:   ipTuple.DstPort,
-        transport: trans,
-    }
-
-    msg:=sipMessage{hdr_start: -1,hdr_len: -1,contentlength: 9999}
-
-    buffer:=sip.newBuffer(ts,tuple,&msg)
-    assert.NotNil(t, buffer, "Should not be nil.")
-    assert.Equal(t, transport(255), buffer.transport,            "Should be copied.")
-    assert.Equal(t, cp_ts,          buffer.ts,                   "Should be copied.")
-    assert.Equal(t, ipTuple.SrcIP,  buffer.tuple.SrcIP,          "Should be copied.")
-    assert.Equal(t, 9999         ,  buffer.message.contentlength,"Should be copied.")
-}
 
 // Test Cases migrated from sip_test.go 2018-03-03
 // Test Constants
@@ -354,7 +141,6 @@ func newSIP(store *eventStore, verbose bool) *sipPlugin {
 
     cfg, _ := common.NewConfigFrom(map[string]interface{}{
         "ports":               []int{serverPort},
-        "buffer_timeout":      time.Duration(2)*time.Second,
     })
     sip, err := New(false, callback, cfg)
     if err != nil {
@@ -378,35 +164,18 @@ func TestParseUdp_emptyPacket(t *testing.T) {
     sip := newSIP(store, testing.Verbose())
     packet := newPacket(forward, []byte{})
     sip.ParseUDP(packet)
-    assert.Empty(t, sip.fragmentBuffer.Size(), "There should be no transactions.")
-    assert.True(t, store.empty(), "No result should have been published.")
-}
 
+    assert.Equal(t, 0, store.size(), "There should be one message published.")
+}
 
 // Verify that a malformed packet is safely handled (no panics).
-func TestParseUdp_malformedPacketAfterTimeoute(t *testing.T) {
+func TestParseUdp_malformedPacket(t *testing.T) {
     store := &eventStore{}
     sip := newSIP(store, testing.Verbose())
     garbage := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}
     packet := newPacket(forward, garbage)
     sip.ParseUDP(packet)
 
-    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
-    time.Sleep((5) * time.Second)
-    assert.Empty(t, sip.fragmentBuffer.Size(), "There should be no transactions.")
-    assert.Equal(t, 1, store.size(), "There should be one message published.")
-}
-
-func TestParseUdp_malformedPacketBeforeTimeout(t *testing.T) {
-    store := &eventStore{}
-    sip := newSIP(store, testing.Verbose())
-    garbage := []byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13}
-    packet := newPacket(forward, garbage)
-    sip.ParseUDP(packet)
-
-    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
-    time.Sleep((1) * time.Second)
-    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
     assert.Equal(t, 0, store.size(), "There should be one message published.")
 }
 
@@ -438,27 +207,7 @@ func TestParseUdp_requestPacketWithSDP(t *testing.T){
                        "a=rtpmap:0 PCMU/8000\r\n")
     packet := newPacket(forward, garbage)
     sip.ParseUDP(packet)
-    assert.Equal(t, 0, sip.fragmentBuffer.Size(), "There should be empty.")
     assert.Equal(t, 1, store.size(), "There should be one message published.")
-    if store.size() == 1{
-        //fields:=store.events[0].Fields
-        //headers,_:=fields["sip.headers"].(common.MapStr)
-        // body:=fields["sip.body"]
-        // mandatories
-//        assert.Equal(t, "INVITE", fields["sip.method"], "There should be [INVITE].") 
-//        assert.Equal(t, "sip:0312345678@192.168.0.1;user=phone", fields["sip.request-uri"], "There should be [sip:0312345678@192.168.0.1;user=phone].")
-//        assert.Equal(t, "SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK81075720",
-//                                                                   headers["via"    ].([]common.NetString)[0], "There should be [SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK81075720].") 
-//        assert.Equal(t, "<sip:sipurl@192.168.0.1>;tag=269050131",  headers["from"   ].([]common.NetString)[0], "There should be [<sip:sipurl@192.168.0.1>;tag=269050131]") 
-//        assert.Equal(t, "<sip:0312341234@192.168.0.1;user=phone>", headers["to"     ].([]common.NetString)[0], "There should be [<sip:0312341234@192.168.0.1;user=phone>]") 
-//        assert.Equal(t, "<sip:301234123@10.0.0.1;user=phone>",     headers["contact"].([]common.netstring)[0], "There should be [<sip:301234123@10.0.0.1;user=phone>]") 
-//        assert.Equal(t, "hogehoge@192.168.0.1", headers["call-id"].([]common.NetString)[0], "There should be [hogehoge@192.168.0.1]") 
-//        assert.Equal(t, "hogehoge@192.168.0.1", fields["sip.call-id"], "There should be [hogehoge@192.168.0.1]") 
-        //assert.Equal(t, "", headers[""][0], "There should be []") 
-        //assert.Equal(t, "", headers[""][0], "There should be []") 
-        //assert.Equal(t, "", headers[""][0], "There should be []") 
-
-    }
 }
 
 func TestParseUdp_requestPacketWithoutSDP(t *testing.T){
@@ -475,9 +224,31 @@ func TestParseUdp_requestPacketWithoutSDP(t *testing.T){
                         "\r\n")
     packet := newPacket(forward, garbage)
     sip.ParseUDP(packet)
-    assert.Equal(t, 0, sip.fragmentBuffer.Size(), "There should be empty.")
     assert.Equal(t, 1, store.size(), "There should be one message published.")
 }
+
+func TestParseUdp_requestPacketBeforeStartCRLF(t *testing.T){
+    store := &eventStore{}
+    sip := newSIP(store, testing.Verbose())
+    garbage := []byte(  "\r\n"                                                          +
+                        "\r\n"                                                          +
+                        "\r\n"                                                          +
+                        "\r\n"                                                          +
+                        "\r\n"                                                          +
+                        "ACK sip:0312345678@192.168.0.1:5060 SIP/2.0\r\n"               +
+                        "Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK3408987398\r\n"   +
+                        "From: <sip:hogehoge@example.com>;tag=5408647717\r\n"           +
+                        "To: <sip:0312345678@192.168.0.1>;tag=3713480994\r\n"           +
+                        "Call-ID: hogehoge@10.0.0.1\r\n"                                +
+                        "CSeq: 1 ACK\r\n"                                               +
+                        "Content-Length: 0\r\n"                                         +
+                        "Max-Forwards: 70\r\n"                                          +
+                        "\r\n")
+    packet := newPacket(forward, garbage)
+    sip.ParseUDP(packet)
+    assert.Equal(t, 1, store.size(), "There should be one message published.")
+}
+
 
 func TestParseUdp_responsePacketWithSDP(t *testing.T){
     store := &eventStore{}
@@ -508,7 +279,6 @@ func TestParseUdp_responsePacketWithSDP(t *testing.T){
 
     packet := newPacket(forward, garbage)
     sip.ParseUDP(packet)
-    assert.Equal(t, 0, sip.fragmentBuffer.Size(), "There should be empty.")
     assert.Equal(t, 1, store.size(), "There should be one message published.")
     if store.size() == 1{
         fields:=store.events[0].Fields
@@ -552,8 +322,7 @@ func TestParseUdp_responsePacketWithSDP(t *testing.T){
         assert.Equal(t, via1,
                         fmt.Sprintf("%s",(headers["via"].([]common.NetString))[1]),
                         fmt.Sprintf("There should be [%s].",via1))
-
-        via2:="SIP/2.0/TCP 192.168.0.1:5058;rport=34867;received=192.168.0.1;" +
+via2:="SIP/2.0/TCP 192.168.0.1:5058;rport=34867;received=192.168.0.1;" +
               "branch=z9hG4bKPjkp40B7iQTntn1rf9TuASHKtyhPss8fh5"
         assert.Equal(t, via2,
                         fmt.Sprintf("%s",(headers["via"].([]common.NetString))[2]),
@@ -583,14 +352,14 @@ func TestParseUdp_responsePacketWithoutSDP(t *testing.T){
                        "\r\n")
     packet := newPacket(forward, garbage)
     sip.ParseUDP(packet)
-    assert.Equal(t, 0, sip.fragmentBuffer.Size(), "There should be empty.")
+
     assert.Equal(t, 1, store.size(), "There should be one message published.")
 }
 
-func TestParseUdp_PacketFragmentedInBody(t *testing.T) {
+func TestParseUdp_IncompletePacketInBody(t *testing.T) {
     store := &eventStore{}
     sip := newSIP(store, testing.Verbose())
-    garbage1 := []byte(  "INVITE sip:0312345678@192.168.0.1:5060 SIP/2.0\r\n"                        +
+    garbage := []byte(  "INVITE sip:0312345678@192.168.0.1:5060 SIP/2.0\r\n"                        +
                          "Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK1701109339\r\n"               +
                          "From: <sip:hogehoge@example.cm>;tag=1451088881\r\n"                        +
                          "To: <sip:0312345678@192.168.0.1>\r\n"                                      +
@@ -613,30 +382,20 @@ func TestParseUdp_PacketFragmentedInBody(t *testing.T) {
                          "\r\n"                                                                      +
                          "v=0\r\n" )
 
-    garbage2  := []byte( "o=- 0 0 IN IP4 10.0.0.1\r\n"                                               +
-                         "s=-\r\n"                                                                   +
-                         "c=IN IP4 10.0.0.1\r\n"                                                     +
-                         "t=0 0\r\n"                                                                 +
-                         "m=audio 10000 RTP/AVP 0 18\r\n"                                            +
-                         "a=rtpmap:0 PCMU/8000\r\n"                                                  +
-                         "a=rtpmap:18 G729/8000\r\n")
-
-    packet1 := newPacket(forward, garbage1)
-    sip.ParseUDP(packet1)
-    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
-    time.Sleep(500 * time.Millisecond)
-    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
-    packet2 := newPacket(forward, garbage2)
-    sip.ParseUDP(packet2)
-    assert.Equal(t, 0, sip.fragmentBuffer.Size(), "There should be empty.")
+    packet := newPacket(forward, garbage)
+    sip.ParseUDP(packet)
     assert.Equal(t, 1, store.size(), "There should be one message published.")
+
+    fields:=store.events[0].Fields
+    notes:=fields["sip.notes"]
+    assert.Contains(t, fmt.Sprintf("%s",notes) ,"Incompleted message","There should be contained." )
 }
 
-func TestParseUdp_PacketFragmentedInHeader(t *testing.T) {
+func TestParseUdp_IncompletePacketInHeader(t *testing.T) {
     store := &eventStore{}
     sip := newSIP(store, testing.Verbose())
 
-    garbage1 := []byte(  "INVITE sip:0312345678@192.168.0.1:5060 SIP/2.0\r\n"                        +
+    garbage := []byte(  "INVITE sip:0312345678@192.168.0.1:5060 SIP/2.0\r\n"                        +
                          "Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK1701109339\r\n"               +
                          "From: <sip:hogehoge@example.cm>;tag=1451088881\r\n"                        +
                          "To: <sip:0312345678@192.168.0.1>\r\n"                                      +
@@ -648,33 +407,12 @@ func TestParseUdp_PacketFragmentedInHeader(t *testing.T) {
                          "Content-Length: 134\r\n"                                                   +
                          "Session-Expires: 180\r\n")
 
-    garbage2 := []byte(  "Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK1701109339\r\n"               +
-                         "Max-Forwards: 70\r\n"                                                      +
-                         "Content-Type: application/sdp\r\n"                                         +
-                         "Privacy: none\r\n"                                                         +
-                         "P-Preferred-Identity: <sip:hogehoge@example.com>\r\n"                      +
-                         "User-Agent: Some User-Agent\r\n"                                           +
-                         "Proxy-Authorization: Digest username=\"hogehoge\", realm=\"example.com\"," +
-                         " nonce=\"15044921123142536\", uri=\"sip:0312345678@192.168.0.1:5060\","    +
-                         " response=\"358a640a266ad4eb3ed82f0746c82dfd\"\r\n"                        +
-                         "\r\n"                                                                      +
-                         "v=0\r\n"                                                                   +
-                         "o=- 0 0 IN IP4 10.0.0.1\r\n"                                               +
-                         "s=-\r\n"                                                                   +
-                         "c=IN IP4 10.0.0.1\r\n"                                                     +
-                         "t=0 0\r\n"                                                                 +
-                         "m=audio 10000 RTP/AVP 0 18\r\n"                                            +
-                         "a=rtpmap:0 PCMU/8000\r\n"                                                  +
-                         "a=rtpmap:18 G729/8000\r\n")
-
-    packet1 := newPacket(forward, garbage1)
-    sip.ParseUDP(packet1)
-    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
-    time.Sleep(500 * time.Millisecond)
-    assert.Equal(t, 1, sip.fragmentBuffer.Size(), "There should be one transaction.")
-    packet2 := newPacket(forward, garbage2)
-    sip.ParseUDP(packet2)
-    assert.Equal(t, 0, sip.fragmentBuffer.Size(), "There should be no transaction.")
+    packet := newPacket(forward, garbage)
+    sip.ParseUDP(packet)
     assert.Equal(t, 1, store.size(), "There should be one message published.")
+
+    fields:=store.events[0].Fields
+    notes:=fields["sip.notes"]
+    assert.Contains(t, fmt.Sprintf("%s",notes) ,"Incompleted message","There should be contained." )
 }
 

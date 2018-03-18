@@ -11,10 +11,6 @@ import (
     "github.com/elastic/beats/libbeat/common"
 )
 
-func TestConstMaxHashableSIpTupleRawSize(t *testing.T){
-    assert.Equal(t, 16*2+2*2+1, maxHashableSipTupleRawSize, "Should be fixed magic number.")
-}
-
 func TestConstTransportNumbers(t *testing.T){
     assert.Equal(t, 0, transportTCP, "Should be fixed magic number.")
     assert.Equal(t, 1, transportUDP, "Should be fixed magic number.")

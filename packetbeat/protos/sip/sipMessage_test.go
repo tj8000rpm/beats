@@ -82,11 +82,11 @@ func TestParseSIPHeader(t *testing.T){
     msg = sipMessage{}
     msg.raw = garbage
     err = msg.parseSIPHeader()
-    assert.Equal(t,nil  ,err ,"There should be no error." )
-    assert.Equal(t, 8   ,msg.hdr_start     ,"There should be no error." )
-    assert.Equal(t,-1   ,msg.hdr_len       ,"There should be no error." )
-    assert.Equal(t,-1   ,msg.bdy_start     ,"There should be no error." )
-    assert.Equal(t,-1   ,msg.contentlength ,"There should be no error." )
+    assert.Equal(t,nil            ,err ,"There should be no error." )
+    assert.Equal(t, 8             ,msg.hdr_start     ,"There should be no error." )
+    assert.Equal(t,len(garbage)-8 ,msg.hdr_len       ,"There should be no error." )
+    assert.Equal(t,len(garbage)   ,msg.bdy_start     ,"There should be no error." )
+    assert.Equal(t,0              ,msg.contentlength ,"There should be no error." )
 
     // no mandatory header
     garbage = []byte( "SIP/2.0 200 OK\r\n"          +
@@ -545,23 +545,31 @@ func TestGetMessageStatus(t *testing.T) {
     msg.hdr_len=-1
     msg.bdy_start=-1
     msg.contentlength=-1
+    msg.isIncompletedHdrMsg=true
+    msg.isIncompletedBdyMsg=false
     assert.Equal(t,SIP_STATUS_HEADER_RECEIVING    , msg.getMessageStatus()   , "There should be HEADER RECEIVING." )
 
     msg.hdr_start=30
     msg.hdr_len=50
     msg.bdy_start=54
     msg.contentlength=-1
+    msg.isIncompletedHdrMsg=false
+    msg.isIncompletedBdyMsg=true
     assert.Equal(t,SIP_STATUS_BODY_RECEIVING      , msg.getMessageStatus()   , "There should be BODY RECEIVING." )
 
     msg.hdr_start=30
     msg.hdr_len=50
     msg.bdy_start=54
     msg.contentlength=55
+    msg.isIncompletedHdrMsg=false
+    msg.isIncompletedBdyMsg=false
     assert.Equal(t,SIP_STATUS_RECEIVED      , msg.getMessageStatus()   , "There should be RECEIVED." )
 
     msg.hdr_start=30
     msg.hdr_len=50
     msg.bdy_start=54
     msg.contentlength=0
+    msg.isIncompletedHdrMsg=false
+    msg.isIncompletedBdyMsg=false
     assert.Equal(t,SIP_STATUS_RECEIVED      , msg.getMessageStatus()   , "There should be RECEIVED." )
 }

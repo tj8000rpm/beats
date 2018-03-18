@@ -50,6 +50,10 @@ type sipMessage struct {
     hdr_start    int
     hdr_len      int
     bdy_start    int
+
+    // flags
+    isIncompletedHdrMsg bool
+    isIncompletedBdyMsg bool
 }
 
 func (msg sipMessage) String() string {
@@ -154,7 +158,9 @@ func (msg *sipMessage) parseSIPHeader() (err error){
     //ヘッダ途中でフラグメントされた（と思しき）パケット
     if hdr_end < 0 {
         //TODO:SIPパケットでない可能性もあり。
-        return nil
+        //return nil
+        msg.isIncompletedHdrMsg=true
+        hdr_end=byte_len
     }
    
     msg.hdr_len  =hdr_end - hdr_start
@@ -270,6 +276,7 @@ func (msg *sipMessage) parseSIPHeader() (err error){
         // ボディが未受信の場合はボディ未受信を表すために
         // contentlength=-1を設定し、バッファリングし
         // 再度SIPとしてパースするようにする
+        msg.isIncompletedBdyMsg=true
         msg.contentlength=-1
     }
 
@@ -502,8 +509,9 @@ func (msg *sipMessage) parseBody_SDP(rawData []byte) (body *map[string][]common.
 }
 
 func (msg *sipMessage) getMessageStatus() (int){
+    if msg.isIncompletedHdrMsg { return SIP_STATUS_HEADER_RECEIVING }
+    if msg.isIncompletedBdyMsg { return SIP_STATUS_BODY_RECEIVING }
     if msg.hdr_start < 0 { return SIP_STATUS_REJECTED}
-    if msg.hdr_len   < 0 { return SIP_STATUS_HEADER_RECEIVING}
     if msg.contentlength < 0 { return SIP_STATUS_BODY_RECEIVING}
     return SIP_STATUS_RECEIVED
 }

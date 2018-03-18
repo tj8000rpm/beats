@@ -1,8 +1,6 @@
 package sip
 
 import (
-    "time"
-
     "github.com/elastic/beats/libbeat/common"
     "github.com/elastic/beats/libbeat/logp"
     "github.com/elastic/beats/libbeat/monitoring"
@@ -16,18 +14,8 @@ var (
 
 // Packetbeats monitoring metrics
 var (
-    bufferTimeout  = monitoring.NewInt(nil, "sip.buffer_timeouted")
-    
     messageIgnored = monitoring.NewInt(nil, "sip.message_ignored")
 )
-
-const maxHashableSipTupleRawSize = 16 + // ip addr (src) 128bit(ip v6)
-                                   16 + // ip addr (dst) 128bit(ip v6)
-                                    2 + // port number (src) 16bit
-                                    2 + // port number (dst) 16bit
-                                    1   // transport 8bit 
-
-type hashableSIPTuple [maxHashableSipTupleRawSize]byte
 
 const  (
     transportTCP = 0
@@ -41,21 +29,6 @@ const (
     SIP_STATUS_REJECTED         = 3
 )
 
-// SIPなのでダイアログで取るのはメモリやリアルタイム性から微妙と判断
-// SIPのメッセージは1つ1つをそのまま書き出す方向で実装
-// UDPのフラグメントだけ気にして実装
-type sipBuffer struct {
-    ts           time.Time // Time when the request was received.
-    tuple        sipTuple  // Key used to track this transaction in the transactionsMap.
-    uac          common.Endpoint
-    uas          common.Endpoint
-    transport    transport
-    message      *sipMessage
-}
-
-/**
- * どの構造体にも属さないメソッド ------------------------------------
- **/
 
 func init() {
     // Memo: Secound argment*New* is below New function.

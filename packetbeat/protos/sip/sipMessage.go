@@ -112,17 +112,17 @@ func (msg *sipMessage) parseSIPHeader() (err error){
     msg.contentlength=-1
 
 
-    // SIPのヘッダとボディの区切りとそれまでのCRLFで改行が入っている箇所を探す
-    cutPosS := []int{} // SIPメッセージの先頭、またはCRLFの直後のバイト位置
-    cutPosE := []int{} // CRLFの直前のバイト位置
+    // Find SIP header start position and headers-bodies separeted postion
+    cutPosS := []int{} // SIP message start point and after CRLF points
+    cutPosE := []int{} // before CRLF points
 
     byte_len := len(msg.raw)
-    hdr_start:=-1       // SIPメッセージの始まり位置を-1で初期化
-    hdr_end  :=-1 // SIPのボディの終了位置(CRLFCRLF)位置を受け取ったbyte arrayの長さで初期化
-    bdy_start:=byte_len // SIPのボディの終了位置(CRLFCRLF)位置を受け取ったbyte arrayの長さで初期化
+    hdr_start:=-1       // SIP message statr point was initialized by -1
+    hdr_end  :=-1       // SIP header end point(\r\n\r\n) was initialized by -1
+    bdy_start:=byte_len // SIP bodies start point (after \r\n\r\n) was initialized by packet length
 
     for i,ch := range msg.raw {
-        //冒頭の\r\nを無視していく
+        // ignore any CRLF appearing before the start-line (RFC3261 7.5)
         if hdr_start == -1 {
             if ch == byte('\n') || ch == byte('\r') {
                 continue
@@ -132,13 +132,13 @@ func (msg *sipMessage) parseSIPHeader() (err error){
             }
         }
 
-        //CRLFの全部の場所を取得
+        // getting all CRLF points
         if i+1<byte_len &&
                 msg.raw[i+0] == byte('\r') && msg.raw[i+1] == byte('\n'){
             cutPosE = append(cutPosE,i)
             cutPosS = append(cutPosS,i+2)
         }
-        //ヘッダ終了位置の確認
+        // getting header break point
         if i+3<byte_len &&
                 msg.raw[i+0] == byte('\r') && msg.raw[i+1] == byte('\n') &&
                 msg.raw[i+2] == byte('\r') && msg.raw[i+3] == byte('\n'){
@@ -148,34 +148,38 @@ func (msg *sipMessage) parseSIPHeader() (err error){
         }
     }
     
-    // hdr_startの値を記載
+    // Set finded point to sipMessage member field
     msg.hdr_start=hdr_start
 
-    //CRLFしかないパケット
+    // in case hdr_star == -1,
+    // it is means that the packet was padded with CRLFs
+    // return errors
     if hdr_start < 0 {
         return fmt.Errorf("malformed packet")
     }
-    //ヘッダ途中でフラグメントされた（と思しき）パケット
+
+    // in case missing header end point
+    // it is means that the packet was incomplete as SIP message
+    // flag the indicator
     if hdr_end < 0 {
-        //TODO:SIPパケットでない可能性もあり。
-        //return nil
         msg.isIncompletedHdrMsg=true
         hdr_end=byte_len
     }
    
+    // calculate header length by header endpoint and startpoint
     msg.hdr_len  =hdr_end - hdr_start
     msg.bdy_start=bdy_start
 
-    // 正常系処理
-    // SIP
+    // parse SIP header and getting maps
     headers, start_line:=msg.parseSIPHeaderToMap(cutPosS,cutPosE)
 
-    // リクエストかレスポンスかを判定
+    // in case start line was malformed, return error
     if len(start_line) != 3{
         msg.notes = append(msg.notes,common.NetString("start line parse error."))
         return fmt.Errorf("malformed packet")
     }
 
+    // decide request or response
     msg.isRequest = strings.Contains(start_line[2],"SIP/2.0")
     if msg.isRequest {
         msg.method    =common.NetString(start_line[0])
@@ -202,7 +206,6 @@ func (msg *sipMessage) parseSIPHeader() (err error){
     maxfrowards_array, existMaxForwards := (*headers)["max-forwards"]
     via_array        , existVia         := (*headers)["via"         ]
 
-    // 必須ヘッダ不足
     if existTo {
         msg.to    =getLastElementStrArray(to_array)
     }else{
@@ -249,14 +252,14 @@ func (msg *sipMessage) parseSIPHeader() (err error){
     contentlength:=0
 
     if existContentType{
-        // Content-Lengthが存在する場合
-        // 取得を試みる。失敗した場合は0でリセットする
+        // in case Content-Length was exist
+        // getting content-Length with header values
+        // in case parseint missed , lenght was reset with 0
         if existContentLength{
             raw_cnt_len,err_cnt_len := strconv.ParseInt(string(getLastElementStrArray(contentlength_array)),10,64)
             contentlength=int(raw_cnt_len)
 
-            // Content-Lengthが不正文字列の場合は
-            // 無視して0で初期化
+            // parseint error, 0 reset
             if err_cnt_len!= nil{
                 contentlength=0
             }
@@ -264,23 +267,20 @@ func (msg *sipMessage) parseSIPHeader() (err error){
             contentlength=byte_len - bdy_start
         }
     } else {
-    // Content-typeはBodyがある場合は存在するはずなので
-    // Content-Typeが存在しない場合はBody無しとして
-    // ヘッダの後のデータは無視する(RFC 3261 20.15)
+    // in case content-type was not founded from packet
+    // bodies was ignored (RFC 3261 20.15)
         contentlength=0
     }
 
     msg.contentlength=contentlength
 
     if msg.bdy_start + msg.contentlength > byte_len {
-        // ボディが未受信の場合はボディ未受信を表すために
-        // contentlength=-1を設定し、バッファリングし
-        // 再度SIPとしてパースするようにする
+        // in case bodies length was short than content-length
+        // flag the indicator 
         msg.isIncompletedBdyMsg=true
         msg.contentlength=-1
     }
 
-    // 問題なければerr=nil
     return nil
 }
 

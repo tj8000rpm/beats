@@ -42,7 +42,7 @@ func (sip *sipPlugin) GetPorts() []int {
     return sip.ports
 }
 
-// publishMessageはsipMessageをjsonとしてプッシュするように整形する
+// publishMessage to reshape the sipMessage for in order to pushing with json.
 func (sip *sipPlugin) publishMessage(msg *sipMessage) {
     if sip.results == nil {
         return

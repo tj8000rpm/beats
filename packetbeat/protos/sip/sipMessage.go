@@ -285,25 +285,25 @@ func (msg *sipMessage) parseSIPHeader() (err error){
 }
 
 /**
- * commaSeparatedStringに指定された文字列（カンマ区切り）を,位置で区切り、
- * 区切った後の文字列の前後のスペースを排除したNetStringの配列に変更する
+ * commaSeparatedString is string split with comma, the string was split with comma,
+ * trim the SPs and convert to NetString and thats return as an array.
  *
  * example:
  * commaSeparatedString : ,aaaa,"bbbb,ccc",hoge\,hige,\"aa,aa\",
  * separatedStrings : 
- *   -            // カンマで始まっている部分は前に空文字を追加する
- *   - aaaa
- *   -"bbbb,cccc" // "で区切られた部分はセパレートしない
- *   - hoge\,hige // エスケープされた,はセパレートしない
- *   - \"aa       // エスケープされた"で区切られた部分はセパレートする
- *   - aa\"       // 同上
- *   -            // カンマで終わっている部分は後ろに空文字を追加する
+ *  [0]:               
+ *  [1]: aaaa
+ *  [2]: "bbbb,cccc" 
+ *  [3]: hoge\,hige    
+ *  [4]: \"aa          
+ *  [5]: aa\"          
+ *  [6]:               
  *
  *  example2:
  *  commaSeparatedString : aaaa,"aaaaa,bbb
  *  separatedStrings :
- *    - aaaa
- *    - "aaaaa,bbb  //エスケープされたとちゅうデモ書き出し
+ *   [0]: aaaa
+ *   [1]: "aaaaa,bbb | output immediately during escaped finished
  **/
 func (msg *sipMessage) separateCsv(commaSeparatedString string) (separatedStrings *[]common.NetString){
     separatedStrings = &[]common.NetString{}
@@ -312,15 +312,15 @@ func (msg *sipMessage) separateCsv(commaSeparatedString string) (separatedString
     insubcsv:=false
     escaped:=false
     for idx,curChar := range commaSeparatedString{
-        /* escaped boolの動き
+        /* MEMO:state of escaped bool
          *   time|01234567
          * ------+--------
          *   char| \\"\\\"
          * ------+--------
          * x=!esc| TFTTFTF //
-         * y=c==\| TTFTTTF // prevChar==\\の結果
+         * y=c==\| TTFTTTF // result of prevChar==\\
          * ------+--------
-         *   x&&y|FTFFTFTF // escaped boolの計算結果
+         *   x&&y|FTFFTFTF // calculation result of escaped bool
         */
         escaped=(!escaped && prevChar == '\\')
         finalChr :=(idx+1 == len(commaSeparatedString))
@@ -360,30 +360,36 @@ func (msg *sipMessage) parseSIPHeaderToMap(cutPosS []int,cutPosE []int) (*map[st
         s:=cutPosS[i]
         e:=cutPosE[i]
 
-        if i==0 { // Requst-line or Status-Lineが入るはず。
+        if i==0 {
+            // Request-line or Status-line is set to first_lines
             first_lines=strings.SplitN(string(msg.raw[s:e])," ",3)
         }else{
-            // 途中で改行された場合の処理(先頭がスペース、またはタブ)
-            // Call-Id: hogehoge--adslfaaiii
-            //  higehige@hogehoge.com
-            // みたいなケースに対応
+            //  Header fields can be extended over multiple lines by preceding each
+            // extra line with at least one SP or horizontal tab (HT).(RFC3261 7.3.1)
+            // (A)
+            // Subject: I know you're there, pick up the phone and talk to me!
+            // (B)
+            // Subject: I know you're there,
+            //          pick up the phone
+            //          and talk to me!
+            // (A) and (B) are equivalent
             if msg.raw[s] == byte(' ') || msg.raw[s] == byte('\t'){
                 if lastheader!=""{
                     lastElement:=string(getLastElementStrArray((*headers)[lastheader]))
-                    // TrimSpaceは" "と"\t"の両方削除してくれる
+                    // TrimSpace is delete both " " and "\t"
                     lastElement+=fmt.Sprintf(" %s",strings.TrimSpace(string(msg.raw[s:e])))
                     (*headers)[lastheader][len((*headers)[lastheader])-1]=common.NetString(lastElement)
                 }else{
-                    // 当該行を無視する
+                    // ignore this line
                 }
                 continue
             }
 
-            // 前回処理した場所は改行箇所であった部分で,区切りを探す
-            // Process 342
+            // in case header value was comma separated strings (ex. Hoge: hige, foo)
+            // FIXME: Above process
             if lastheader!=""{
                 lastHeaderEndIdx:=len((*headers)[lastheader])-1
-                if lastHeaderEndIdx < 0 {continue} // ないはずだけど・・・
+                if lastHeaderEndIdx < 0 {continue} // This case is not exist, maybe...
 
                 lastElement:=string(getLastElementStrArray((*headers)[lastheader]))
                 separatedStrings:=msg.separateCsv(lastElement)
@@ -396,17 +402,20 @@ func (msg *sipMessage) parseSIPHeaderToMap(cutPosS []int,cutPosE []int) (*map[st
                 }
             }
 
-            // 先頭がスペースまたはタブ出ない時はヘッダパラメータのはず
+            // in case header line is NOT start [SP] or [HT]
+            // this line will be header parameter
+            // header parameter shuld be include ':'
+            // and split two string ,before first ':' and after first ':'.
             header_kv:=strings.SplitN(string(msg.raw[s:e]),":",2)
             key:=strings.ToLower(strings.TrimSpace(header_kv[0]))
             val:=strings.TrimSpace(header_kv[1])
 
-            // 分割の結果:が含まれていない場合
+            // in case string was not included the ':', it is not valid data, ignored.
             if val == ""{
                 continue
             }
 
-            // 初登場のヘッダの場合はマップを初期化
+            // Initialize and add to map, if first find the header name in process
             _,ok := (*headers)[key]
             if !ok{
                 (*headers)[key]=[]common.NetString{}
@@ -415,11 +424,11 @@ func (msg *sipMessage) parseSIPHeaderToMap(cutPosS []int,cutPosE []int) (*map[st
             (*headers)[key]=append((*headers)[key],common.NetString(val))
             lastheader=key
         }
-        // 最終要素でもカンマ区切りを探す
-        // FIXME: Same Process 342...
+        // in case last processed headers line is separated with comma.
+        // FIXME: this process is same to "Above process"
         if lastheader!=""{
             lastHeaderEndIdx:=len((*headers)[lastheader])-1
-            if lastHeaderEndIdx < 0 {continue} // ないはずだけど・・・
+            if lastHeaderEndIdx < 0 {continue} // This case is not exist, maybe...
 
             lastElement:=string(getLastElementStrArray((*headers)[lastheader]))
             separatedStrings:=msg.separateCsv(lastElement)
@@ -435,8 +444,7 @@ func (msg *sipMessage) parseSIPHeaderToMap(cutPosS []int,cutPosE []int) (*map[st
     return headers, first_lines
 }
 
-// SIPボディのパース処理
-// TODO:Content-Encoding時の処理(RFC3261) 未実装
+// TODO:The procedure with Content-Encoding(RFC3261).
 func (msg *sipMessage) parseSIPBody() (err error){
     // in case no called before parseSIPHeader
     if (msg.headers) == nil{
@@ -450,7 +458,7 @@ func (msg *sipMessage) parseSIPBody() (err error){
 
     contenttype_array  , hd_ctype_ok   := (*msg.headers)["content-type"]
 
-    // content-typeがない場合はreturnして終了
+    // if not exist Content-Type header, return a error
     if !hd_ctype_ok {
         debugf("parseSIPBody: This sip message has not body.")
         return fmt.Errorf("no content-type header")
@@ -463,7 +471,9 @@ func (msg *sipMessage) parseSIPBody() (err error){
         return nil
     }
 
-    // bodyの種類により動作を変更する
+    // Switch the function with body content type
+    // TODO: Now, it is supported only SDP,
+    //       more SIP body application support (I planning to support SIP-I(ISUP)/Multi-part)
     lower_case_content_type:=strings.ToLower(string(getLastElementStrArray(contenttype_array)))
     switch(lower_case_content_type){
         case "application/sdp":

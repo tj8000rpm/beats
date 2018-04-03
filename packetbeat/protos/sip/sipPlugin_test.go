@@ -15,7 +15,8 @@ import (
 )
 
 
-func TestInit(t *testing.T) {// error {
+func TestInit(t *testing.T) {
+    // TODO: Is it need test implementation?
 }
 
 func TestSetFromConfig(t *testing.T) {

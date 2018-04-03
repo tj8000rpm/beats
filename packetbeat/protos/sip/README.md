@@ -7,7 +7,7 @@
 
 #### Additional timestamp
 - Default timestamp field(@timestamp) precision is not sufficient(the sip response is often send immediately when request received eg. 100 Trying).
-- Therefore ``sip.unixtimenano``(int64) is added to keep the message order.
+- Therefore I added the ``sip.unixtimenano``(int64) in order to keep the message order.
 
 #### Request-Line,Status-Line
 - In case of SIP request received, stored ``sip.method``(eg.INVITE,BYE,ACK,PRACK) and ``sip.request-uri``.
@@ -136,15 +136,14 @@ a=rtpmap:0 PCMU/8000
 }
 ```
 
-#### UDP
-* supported fragmented packets
-
 #### TCP
 * ``transport=tcp`` is not supported yet.
 
 #### TODO
-* Content-encodeの場合をどうするか
-* TCPは後回しとする
-* テストケースを作る
+* In case of body was encoded, Content-encode
+* SIP/TCP
+* More body parser.
+ - ISUP(SIP-I/SIP-T)
+ - multipart/form-data boundary
 * その他いろいろ思いついたら追記する
 

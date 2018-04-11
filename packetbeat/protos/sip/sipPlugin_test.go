@@ -209,6 +209,74 @@ func TestParseUdp_requestPacketWithSDP(t *testing.T){
     packet := newPacket(forward, garbage)
     sip.ParseUDP(packet)
     assert.Equal(t, 1, store.size(), "There should be one message published.")
+    if store.size() == 1{
+        fields:=store.events[0].Fields
+        headers,_:=fields["sip.headers"].(common.MapStr)
+        // mandatories
+        assert.Equal(t, "INVITE",
+                        fields["sip.method"], 
+                        "There should be [INVITE].")
+
+                        assert.Equal(t, "sip:0312345678@192.168.0.1;user=phone", 
+                        fields["sip.request-uri"], 
+                        "There should be [sip:0312345678@192.168.0.1;user=phone].")
+
+        assert.Equal(t, "hogehoge@192.168.0.1" ,
+                        fields["sip.call-id"], 
+                        "There should be [hogehoge@192.168.0.1].")
+
+        assert.Equal(t, "<sip:sipurl@192.168.0.1>;tag=269050131",
+                        fields["sip.from"], 
+                        "There should be [<sip:sipurl@192.168.0.1>;tag=269050131].")
+
+        assert.Equal(t, "<sip:0312341234@192.168.0.1;user=phone>",
+                        fields["sip.to"],
+                        "There should be [<sip:0312341234@192.168.0.1;user=phone>].")
+
+        assert.Equal(t, "1 INVITE",
+                        fields["sip.cseq"],
+                        "There should be [1 INVITE].")
+        // headers
+        assert.Equal(t, "application/sdp",
+                        fmt.Sprintf("%s",(headers["content-type"].([]common.NetString))[0]),
+                        "There should be [application/sdp].")
+
+        assert.Equal(t, "70",
+                        fmt.Sprintf("%s",(headers["max-forwards"].([]common.NetString))[0]),
+                        "There should be [70].")
+
+        assert.Contains(t, headers["allow"], common.NetString("INVITE"), "There should contain Allow headers.")
+        assert.Contains(t, headers["allow"], common.NetString("ACK")   , "There should contain Allow headers.")
+        assert.Contains(t, headers["allow"], common.NetString("CANCEL"), "There should contain Allow headers.")
+        assert.Contains(t, headers["allow"], common.NetString("BYE")   , "There should contain Allow headers.")
+        assert.Contains(t, headers["allow"], common.NetString("UPDATE"), "There should contain Allow headers.")
+        assert.Contains(t, headers["allow"], common.NetString("PRACK") , "There should contain Allow headers.")
+
+        assert.Contains(t, headers["supported"], common.NetString("100rel"), "There should contain Supported headers.")
+        assert.Contains(t, headers["supported"], common.NetString("timer") , "There should contain Supported headers.")
+
+        assert.Equal(t, "300",
+                        fmt.Sprintf("%s",(headers["session-expires"].([]common.NetString))[0]),
+                        "There should be [300].")
+
+        assert.Equal(t, "none",
+                        fmt.Sprintf("%s",(headers["privacy"].([]common.NetString))[0]),
+                        "There should be [none].")
+
+        assert.Equal(t, "<tel:0387654321>",
+                        fmt.Sprintf("%s",(headers["p-preferred-identity"].([]common.NetString))[0]),
+                        "There should be [<tel:0387654321>].")
+
+        assert.Equal(t, "107",
+                        fmt.Sprintf("%s",(headers["content-length"].([]common.NetString))[0]),
+                        "There should be [107].")
+
+
+        via0:="SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK81075720"
+        assert.Equal(t, via0,
+                        fmt.Sprintf("%s",(headers["via"].([]common.NetString))[0]),
+                        fmt.Sprintf("There should be [%s].",via0))
+    }
 }
 
 func TestParseUdp_requestPacketWithoutSDP(t *testing.T){
@@ -415,5 +483,22 @@ func TestParseUdp_IncompletePacketInHeader(t *testing.T) {
     fields:=store.events[0].Fields
     notes:=fields["sip.notes"]
     assert.Contains(t, fmt.Sprintf("%s",notes) ,"Incompleted message","There should be contained." )
+}
+
+func TestParseUdp_compact_form(t *testing.T){
+    store := &eventStore{}
+    sip := newSIP(store, testing.Verbose())
+    garbage := []byte(  "ACK sip:0312345678@192.168.0.1:5060 SIP/2.0\r\n"               +
+                        "Via: SIP/2.0/UDP 10.0.0.1:5060;branch=z9hG4bK3408987398\r\n"   +
+                        "From: <sip:hogehoge@example.com>;tag=5408647717\r\n"           +
+                        "To: <sip:0312345678@192.168.0.1>;tag=3713480994\r\n"           +
+                        "Call-ID: hogehoge@10.0.0.1\r\n"                                +
+                        "CSeq: 1 ACK\r\n"                                               +
+                        "Content-Length: 0\r\n"                                         +
+                        "Max-Forwards: 70\r\n"                                          +
+                        "\r\n")
+    packet := newPacket(forward, garbage)
+    sip.ParseUDP(packet)
+    assert.Equal(t, 1, store.size(), "There should be one message published.")
 }
 

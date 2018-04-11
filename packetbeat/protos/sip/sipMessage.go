@@ -415,6 +415,22 @@ func (msg *sipMessage) parseSIPHeaderToMap(cutPosS []int,cutPosE []int) (*map[st
                 continue
             }
 
+            // Convert compact form to full form
+            if len(key) == 1{
+                switch(key){
+                    case "i": key="call-id"
+                    case "m": key="contact"
+                    case "e": key="content-encoding"
+                    case "l": key="content-length"
+                    case "c": key="content-type"
+                    case "f": key="from"
+                    case "s": key="subject"
+                    case "k": key="supported"
+                    case "t": key="to"
+                    case "v": key="via"
+                }
+            }
+
             // Initialize and add to map, if first find the header name in process
             _,ok := (*headers)[key]
             if !ok{

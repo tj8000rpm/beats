@@ -525,15 +525,16 @@ func TestParseSIPHeaderToMap_compactform(t *testing.T){
     offset12:=offset11+len(header10)
     offset13:=offset12+len(header11)
     offset14:=offset13+len(header12)
+    offset15:=offset14+len(header13)
+
     cuts:=[]int{ offset0,  offset1,  offset2,  offset3,
                  offset4,  offset5,  offset6,  offset7,
                  offset8,  offset9,  offset10, offset11,
-                 offset12}
-    cute:=[]int{      len(firstline)-2, offset1+len(header0)-2, offset2+len(header1)-2, 
-                offset3+len(header2)-2, offset4+len(header3)-2, offset5+len(header4)-2,
-                offset6+len(header5)-2, offset7+len(header6)-2, offset8+len(header7)-2,
-                offset9+len(header8)-2, offset10+len(header9)-2, offset11+len(header10)-2,
-                offset12+len(header11)-2}
+                 offset12, offset13, offset14, offset15}
+    cute:=[]int{      len(firstline)-2,   offset1+len(header0)-2,   offset2+len(header1)-2,   offset3+len(header2)-2,
+                offset4+len(header3)-2,   offset5+len(header4)-2,   offset6+len(header5)-2,   offset7+len(header6)-2,
+                offset8+len(header7)-2,   offset9+len(header8)-2,   offset10+len(header9)-2,  offset11+len(header10)-2,
+                offset12+len(header11)-2, offset13+len(header12)-2, offset14+len(header13)-2, offset15+len(header14)-2}
     msg := sipMessage{}
     msg.raw = garbage
     headers, first_lines:=msg.parseSIPHeaderToMap(cuts,cute)

@@ -423,6 +423,7 @@ func TestParseSIPHeader(t *testing.T){
                       "CSeq: testCSeq\r\n"                     +
                       "s:subject\r\n"                          +
                       "m: contact\r\n"                         +
+                      "z: notstandard\r\n"                     +
                       "c: application/sdp\r\n"                 +
                       "l: 107\r\n"                             +
                       "Via: testVia5,testVia6\r\n"             +
@@ -456,11 +457,12 @@ func TestParseSIPHeader(t *testing.T){
     assert.Equal(t,common.NetString("p")        ,(*msg.headers)["supported"][2] ,"There should be." )
     assert.Equal(t,common.NetString("tar")      ,(*msg.headers)["content-encoding"][0] ,"There should be." )
     assert.Equal(t,common.NetString("contact")  ,(*msg.headers)["contact"][0] ,"There should be." )
-    assert.Equal(t,common.NetString("application/sdp") ,(*msg.headers)["content-type"][0] ,"There should be." )
     assert.Equal(t,common.NetString("107")      ,(*msg.headers)["content-length"][0] ,"There should be." )
-    assert.Equal(t,  0 ,msg.hdr_start     ,"There should be -1." )
-    assert.Equal(t,239 ,msg.hdr_len       ,"There should be -1." )
-    assert.Equal(t,243 ,msg.bdy_start     ,"There should be -1." )
+    assert.Equal(t,common.NetString("application/sdp") ,(*msg.headers)["content-type"][0] ,"There should be." )
+    assert.Equal(t,common.NetString("notstandard")     ,(*msg.headers)["z"][0] ,"There should be." )
+    assert.Equal(t,  0 ,msg.hdr_start     ,"There should be 0." )
+    assert.Equal(t,263 ,msg.hdr_len       ,"There should be 263." )
+    assert.Equal(t,267 ,msg.bdy_start     ,"There should be 267." )
     assert.Equal(t,107 ,msg.contentlength ,"There should be 107." )
     assert.Equal(t,(map[string]*map[string][]common.NetString)(nil) ,msg.body ,"There should be nill." )
 }

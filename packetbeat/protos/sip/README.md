@@ -140,8 +140,51 @@ a=rtpmap:0 PCMU/8000
 * ``transport=tcp`` is not supported yet.
 
 #### TODO
-* compact form support
 * parse detail mode
+ - example case from(to)
+ - input>> From: "user"<sip:0312341234@bob.com>;tag=zxcvb;otheroption
+ - output>
+```
+{
+    "sip.from.raw":"\"user\"<sip:0312341234@bob.com>;tag=zxcvb;otheroption",
+    "sip.from.display-name":"user",
+    "sip.from.addr":"sip:0312341234@bob.com",
+    "sip.from.param":["tag=zxcvb","otheroption"]
+}
+```
+ - example case cseq
+ - input>> CSeq: 1 INVITE 
+ - output>
+```
+{
+    "sip.cseq.raw":"1 INVITE",
+    "sip.cseq.number":1,
+    "sip.cseq.method":"INVITE"
+}
+```
+ - example case request-uri
+ - input>> INVITE sip:9012341234;rn=9012340000;npdi=yes@hoge.com:5060;transport=udp;user=phone SIP/2.0
+ - output>
+```
+{
+    "sip.request-uri.raw":"sip:9012341234;rn=9012340000;npdi=yes@hoge.com:5060;transport=udp;user=phone"
+    "sip.request-uri.user":"9012341234;rn=9012340000;npdi=yes",
+    "sip.request-uri.host":"hoge.com",
+    "sip.request-uri.port":"5060",
+    "sip.request-uri.params":["transport=udp","user=phone"]
+}
+```
+ - example case request-uri(telephone-subscriber)
+ - input>> INVITE tel:+819012341234;phone-context=+1234;vnd.company.option=foo SIP/2.0
+ - output>
+```
+{
+    "sip.request-uri.raw":"tel:+819012341234;phone-context=+1234;vnd.company.option=foo"
+    "sip.request-uri.user":"+819012341234",
+    "sip.request-uri.params":["phone-context=+1234","vnd.company.option=foo"]
+}
+```
+
 * In case of body was encoded, Content-encode
 * SIP/TCP
 * More body parser.

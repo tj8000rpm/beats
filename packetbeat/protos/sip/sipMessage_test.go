@@ -331,6 +331,49 @@ func TestParseSIPHeader(t *testing.T){
     assert.Equal(t, -1 ,msg.contentlength ,"There should be -1." )
     assert.Equal(t,(map[string]*map[string][]common.NetString)(nil) ,msg.body ,"There should be nill." )
 
+    // normal case request
+    garbage = []byte( "INVITE sip:alice@boston.com SIP/2.0\r\n" +
+                      "Via: testVia1,\r\n"                     +
+                      " testVia2 \r\n"                         +
+                      "via: testVia3,  testVia4\r\n"           +
+                      "From: testFrom\r\n"                     +
+                      "To  \t :\t  testTo\t\t\r\n"             +
+                      "Call-ID: testCall-ID\r\n"               +
+                      "CSeq: testCSeq\r\n"                     +
+                      "Content-Type: application/sdp\r\n"      +
+                      "Content-length: 107\r\n"                +
+                      "Via: testVia5,testVia6\r\n"             +
+                      "\r\n"                                   +
+                      "v=0\r\n"                                +
+                      "o=- 0 0 IN IP4 10.0.0.1\r\n"            +
+                      "s=-\r\n"                                +
+                      "c=IN IP4 10.0.0.1\r\n"                  +
+                      "t=0 0\r\n"                              +
+                      "m=audio 5012 RTP/AVP 0\r\n"             +
+                      "a=rtpmap:0 PCMU/8000\r\n")
+    msg = sipMessage{}
+    msg.raw = garbage
+    err = msg.parseSIPHeader()
+    assert.Equal(t,nil        , err                         , "There should be no error." )
+    assert.Equal(t,common.NetString("INVITE")               ,msg.method     ,"There should be." )
+    assert.Equal(t,common.NetString("sip:alice@boston.com") ,msg.requestUri ,"There should be." )
+    assert.Equal(t,common.NetString("testTo")      ,msg.to     ,"There should be." )
+    assert.Equal(t,common.NetString("testFrom")    ,msg.from   ,"There should be." )
+    assert.Equal(t,common.NetString("testCSeq")    ,msg.cseq   ,"There should be." )
+    assert.Equal(t,common.NetString("testCall-ID") ,msg.callid ,"There should be." )
+    vias,_:=(*msg.headers)["via"]
+    assert.Equal(t,common.NetString("testVia1") ,vias[0] ,"There should be." )
+    assert.Equal(t,common.NetString("testVia2") ,vias[1] ,"There should be." )
+    assert.Equal(t,common.NetString("testVia3") ,vias[2] ,"There should be." )
+    assert.Equal(t,common.NetString("testVia4") ,vias[3] ,"There should be." )
+    assert.Equal(t,common.NetString("testVia5") ,vias[4] ,"There should be." )
+    assert.Equal(t,common.NetString("testVia6") ,vias[5] ,"There should be." )
+    assert.Equal(t,  0 ,msg.hdr_start     ,"There should be -1." )
+    assert.Equal(t,239 ,msg.hdr_len       ,"There should be -1." )
+    assert.Equal(t,243 ,msg.bdy_start     ,"There should be -1." )
+    assert.Equal(t,107 ,msg.contentlength ,"There should be 107." )
+    assert.Equal(t,(map[string]*map[string][]common.NetString)(nil) ,msg.body ,"There should be nill." )
+
     // normal case response
     garbage = []byte( "SIP/2.0 183 Session Progress\r\n" +
                       "Via: testVia1,\r\n"               +
@@ -364,6 +407,60 @@ func TestParseSIPHeader(t *testing.T){
     assert.Equal(t,  0 ,msg.hdr_start     ,"There should be -1." )
     assert.Equal(t,229 ,msg.hdr_len       ,"There should be -1." )
     assert.Equal(t,233 ,msg.bdy_start     ,"There should be -1." )
+    assert.Equal(t,107 ,msg.contentlength ,"There should be 107." )
+    assert.Equal(t,(map[string]*map[string][]common.NetString)(nil) ,msg.body ,"There should be nill." )
+
+    // normal commpact form request
+    garbage = []byte( "INVITE sip:alice@boston.com SIP/2.0\r\n"+
+                      "Via: testVia1,\r\n"                     +
+                      " testVia2 \r\n"                         +
+                      "v: testVia3,  testVia4\r\n"             +
+                      "f: testFrom\r\n"                        +
+                      "k : s,u,p\r\n"                          +
+                      "e: tar\r\n"                             +
+                      "t  \t :\t  testTo\t\t\r\n"              +
+                      "i: testCall-ID\r\n"                     +
+                      "CSeq: testCSeq\r\n"                     +
+                      "s:subject\r\n"                          +
+                      "m: contact\r\n"                         +
+                      "c: application/sdp\r\n"                 +
+                      "l: 107\r\n"                             +
+                      "Via: testVia5,testVia6\r\n"             +
+                      "\r\n"                                   +
+                      "v=0\r\n"                                +
+                      "o=- 0 0 IN IP4 10.0.0.1\r\n"            +
+                      "s=-\r\n"                                +
+                      "c=IN IP4 10.0.0.1\r\n"                  +
+                      "t=0 0\r\n"                              +
+                      "m=audio 5012 RTP/AVP 0\r\n"             +
+                      "a=rtpmap:0 PCMU/8000\r\n")
+    msg = sipMessage{}
+    msg.raw = garbage
+    err = msg.parseSIPHeader()
+    assert.Equal(t,nil        , err                         , "There should be no error." )
+    assert.Equal(t,common.NetString("INVITE")               ,msg.method     ,"There should be." )
+    assert.Equal(t,common.NetString("sip:alice@boston.com") ,msg.requestUri ,"There should be." )
+    assert.Equal(t,common.NetString("testTo")      ,msg.to     ,"There should be." )
+    assert.Equal(t,common.NetString("testFrom")    ,msg.from   ,"There should be." )
+    assert.Equal(t,common.NetString("testCSeq")    ,msg.cseq   ,"There should be." )
+    assert.Equal(t,common.NetString("testCall-ID") ,msg.callid ,"There should be." )
+    assert.Equal(t,common.NetString("testVia1") ,(*msg.headers)["via"][0] ,"There should be." )
+    assert.Equal(t,common.NetString("testVia2") ,(*msg.headers)["via"][1] ,"There should be." )
+    assert.Equal(t,common.NetString("testVia3") ,(*msg.headers)["via"][2] ,"There should be." )
+    assert.Equal(t,common.NetString("testVia4") ,(*msg.headers)["via"][3] ,"There should be." )
+    assert.Equal(t,common.NetString("testVia5") ,(*msg.headers)["via"][4] ,"There should be." )
+    assert.Equal(t,common.NetString("testVia6") ,(*msg.headers)["via"][5] ,"There should be." )
+    assert.Equal(t,common.NetString("subject")  ,(*msg.headers)["subject"][0] ,"There should be." )
+    assert.Equal(t,common.NetString("s")        ,(*msg.headers)["supported"][0] ,"There should be." )
+    assert.Equal(t,common.NetString("u")        ,(*msg.headers)["supported"][1] ,"There should be." )
+    assert.Equal(t,common.NetString("p")        ,(*msg.headers)["supported"][2] ,"There should be." )
+    assert.Equal(t,common.NetString("tar")      ,(*msg.headers)["content-encoding"][0] ,"There should be." )
+    assert.Equal(t,common.NetString("contact")  ,(*msg.headers)["contact"][0] ,"There should be." )
+    assert.Equal(t,common.NetString("application/sdp") ,(*msg.headers)["content-type"][0] ,"There should be." )
+    assert.Equal(t,common.NetString("107")      ,(*msg.headers)["content-length"][0] ,"There should be." )
+    assert.Equal(t,  0 ,msg.hdr_start     ,"There should be -1." )
+    assert.Equal(t,239 ,msg.hdr_len       ,"There should be -1." )
+    assert.Equal(t,243 ,msg.bdy_start     ,"There should be -1." )
     assert.Equal(t,107 ,msg.contentlength ,"There should be 107." )
     assert.Equal(t,(map[string]*map[string][]common.NetString)(nil) ,msg.body ,"There should be nill." )
 }

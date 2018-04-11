@@ -140,10 +140,11 @@ a=rtpmap:0 PCMU/8000
 * ``transport=tcp`` is not supported yet.
 
 #### TODO
+* compact form support
+* parse detail mode
 * In case of body was encoded, Content-encode
 * SIP/TCP
 * More body parser.
  - ISUP(SIP-I/SIP-T)
  - multipart/form-data boundary
-* その他いろいろ思いついたら追記する
 

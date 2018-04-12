@@ -541,3 +541,78 @@ func (msg *sipMessage) getMessageStatus() (int){
     if msg.contentlength < 0 { return SIP_STATUS_BODY_RECEIVING}
     return SIP_STATUS_RECEIVED
 }
+
+func (msg *sipMessage) parseSIPAddr(addr string) (display_name string, user_info string, host string, port string, params []string){
+    var prevChar rune
+    prevChar=' '
+    pos:=-1
+    display_name=""
+    user_info=""
+    in_addr:=false
+    in_v6:=false
+    skip:=-1
+    addr=addr+";"
+    for idx,curChar := range addr{
+        // Display name
+        if !in_addr && display_name == "" && user_info == "" && host == "" {
+            if curChar == '"' &&prevChar != '\\'{
+                if pos == -1{
+                    pos=idx+1
+                    continue
+                }else{
+                    display_name=addr[pos:idx]
+                    pos=-1
+                }
+            }else if pos != -1{
+                continue
+            }
+        }
+        if curChar == '<' && !in_addr && prevChar != '\\'{
+            in_addr = true
+        } else if curChar == '>' &&  in_addr && prevChar != '\\'{
+            if host==""{
+                host=addr[pos:idx]
+                pos=-1
+            }else{
+                port=addr[pos:idx]
+                pos=-1
+            }
+            in_addr = false
+        } else if curChar == '[' &&  in_addr && prevChar != '\\'{
+            in_v6 = true
+        } else if curChar == ']' &&  in_addr && prevChar != '\\'{
+            in_v6 = false
+        } else if in_addr{
+            if skip > 0{
+                skip--
+                pos=idx+1
+                continue
+            }
+            if skip == -1 && addr[idx:idx+4] == "sip:"{
+                skip=3
+                continue
+            }
+            switch(curChar){
+            case '@':
+                user_info=addr[pos:idx]
+                pos=idx+1
+                continue
+            case ':':
+                if ! in_v6{
+                    host=addr[pos:idx]
+                    pos=idx+1
+                }
+                continue
+            }
+        } else if curChar == ';' && host != "" && prevChar != '\\'{
+            if pos != -1{
+                params=append(params,addr[pos:idx])
+            }
+            pos=idx+1
+        }
+        prevChar=curChar
+    }
+
+    return display_name, user_info, host, port,params
+}
+

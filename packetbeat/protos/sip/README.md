@@ -148,7 +148,8 @@ a=rtpmap:0 PCMU/8000
 {
     "sip.from.raw":"\"user\"<sip:0312341234@bob.com>;tag=zxcvb;otheroption",
     "sip.from.display-name":"user",
-    "sip.from.addr":"sip:0312341234@bob.com",
+    "sip.from.user":"0312341234",
+    "sip.from.host":"bob.com",
     "sip.from.param":["tag=zxcvb","otheroption"]
 }
 ```

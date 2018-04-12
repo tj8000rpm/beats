@@ -721,3 +721,52 @@ func TestGetMessageStatus(t *testing.T) {
     msg.isIncompletedBdyMsg=false
     assert.Equal(t,SIP_STATUS_RECEIVED      , msg.getMessageStatus()   , "There should be RECEIVED." )
 }
+
+func TestParseSIPAddr(t *testing.T) {
+    msg := sipMessage{}
+    name_addr:="\"display_name\"<sip:0312341234@10.0.0.1:5060>;user=phone;hogehoge"
+    display_name, user_info, host, port, params:=msg.parseSIPAddr(name_addr)
+
+    assert.Equal(t,display_name, "display_name", "DisplayName should be [display_name]." )
+    assert.Equal(t,user_info,    "0312341234",   "User info should be [0312341234]." )
+    assert.Equal(t,host,         "10.0.0.1",     "Host should be [10.0.0.1]." )
+    assert.Equal(t,port,         "5060",         "Port should be [5060]." )
+    assert.Contains(t,params,    "user=phone",   "Parameter should have [user=phone]." )
+    assert.Contains(t,params,    "hogehoge",     "Parameter should have [hogehoge]." )
+
+    name_addr="<sip:0312341234@10.0.0.1>"
+    display_name, user_info, host, port, params=msg.parseSIPAddr(name_addr)
+
+    assert.Equal(t,display_name, "", "DisplayName should be []." )
+    assert.Equal(t,user_info,    "0312341234",   "User info should be [0312341234]." )
+    assert.Equal(t,host,         "10.0.0.1",     "Host should be [10.0.0.1]." )
+    assert.Equal(t,port,         "",         "Port should be []." )
+    _=params
+
+    name_addr="\"display_name\"<sip:0312341234@10.0.0.1>"
+    display_name, user_info, host, port, params=msg.parseSIPAddr(name_addr)
+
+    assert.Equal(t,display_name, "display_name", "DisplayName should be [display_name]." )
+    assert.Equal(t,user_info,    "0312341234",   "User info should be [0312341234]." )
+    assert.Equal(t,host,         "10.0.0.1",     "Host should be [10.0.0.1]." )
+    assert.Equal(t,port,         "",         "Port should be []." )
+    _=params
+
+    name_addr="<sip:whois.this>;user=phone"
+    display_name, user_info, host, port, params=msg.parseSIPAddr(name_addr)
+
+    assert.Equal(t,display_name, "", "DisplayName should be []." )
+    assert.Equal(t,user_info,    "",   "User info should be []." )
+    assert.Equal(t,host,         "whois.this",     "Host should be [whois.this]." )
+    assert.Equal(t,port,         "",         "Port should be []." )
+    assert.Contains(t,params,    "user=phone",   "Parameter should have [user=phone]." )
+
+    name_addr="\"0333334444\"<sip:[2001:30:fe::4:123]>;user=phone"
+    display_name, user_info, host, port, params=msg.parseSIPAddr(name_addr)
+
+    assert.Equal(t,display_name, "0333334444", "DisplayName should be [display_name]." )
+    assert.Equal(t,user_info,    "",   "User info should be []." )
+    assert.Equal(t,host,         "[2001:30:fe::4:123]",     "Host should be [2001:30:fe::4:123]." )
+    assert.Equal(t,port,         "",         "Port should be [5060]." )
+    assert.Contains(t,params,    "user=phone",   "Parameter should have [user=phone]." )
+}

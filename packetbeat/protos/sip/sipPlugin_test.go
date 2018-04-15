@@ -23,10 +23,23 @@ func TestSetFromConfig(t *testing.T) {
     sip:=sipPlugin{}
     cfg:=sipConfig{}
     cfg.Ports=[]int{5060,5061}
+    cfg.ParseDetail=true
 
     sip.setFromConfig(&cfg)
-    assert.Equal(t, 5060 , sip.ports[0]                   , "There should be included 5060." )
-    assert.Equal(t, 5061 , sip.ports[1]                   , "There should be included 5061." )
+    assert.Equal(t, 5060 , sip.ports[0]      , "There should be included 5060." )
+    assert.Equal(t, 5061 , sip.ports[1]      , "There should be included 5061." )
+    assert.Equal(t, 2     , len(sip.ports)   , "There should be included 5060." )
+    assert.Equal(t, true , sip.parseDetail   , "There should be included 5061." )
+}
+
+func TestSetFromConfigDefault(t *testing.T) {
+    sip:=sipPlugin{}
+    cfg:=sipConfig{}
+
+    sip.setFromConfig(&cfg)
+    //assert.Equal(t, 5060  , sip.ports[0]     , "There should be included 5060." )
+    assert.Equal(t, 0     , len(sip.ports)   , "There should be included 5060." )
+    assert.Equal(t, false , sip.parseDetail  , "There should be included 5061." )
 }
 
 func TestGetPorts(t *testing.T) {
@@ -34,10 +47,10 @@ func TestGetPorts(t *testing.T) {
     sip.ports=[]int{5060,5061,1123,5555}
     ports:=sip.GetPorts()
 
-    assert.Equal(t, 5060 , ports[0]                   , "There should be included 5060." )
-    assert.Equal(t, 5061 , ports[1]                   , "There should be included 5061." )
-    assert.Equal(t, 1123 , ports[2]                   , "There should be included 5061." )
-    assert.Equal(t, 5555 , ports[3]                   , "There should be included 5061." )
+    assert.Equal(t, 5060 , ports[0]          , "There should be included 5060." )
+    assert.Equal(t, 5061 , ports[1]          , "There should be included 5061." )
+    assert.Equal(t, 1123 , ports[2]          , "There should be included 5061." )
+    assert.Equal(t, 5555 , ports[3]          , "There should be included 5061." )
 }
 
 func TestPublishMessage(t *testing.T) {
@@ -70,6 +83,144 @@ func TestPublishMessage(t *testing.T) {
     assert.Equal(t, nil        , store.events[0].Fields["sip.method"]       , "Compare published packet and stored data." )
     assert.Equal(t, raw_text   , store.events[0].Fields["sip.raw"]          , "Compare published packet and stored data." )
 }
+func TestPublishMessageWithDetailOption(t *testing.T) {
+    sip:=sipPlugin{}
+    sip.parseDetail=true
+    raw_text   :="test raw string"
+    method_text:="INVITE"
+    from:=`"0311112222"<sip:311112222@sip.addr:5060>;tag=FromTag`
+    to:=`<sip:612341234@192.168.0.1>`
+    request_uri:="sip:+8137890123;npdi;rn=+81312341234@hoge.com:5060;user=phone;transport=udp"
+    cseq_num:=6789
+    cseq_method:="INVITE"
+    cseq:=fmt.Sprintf("%d %s",cseq_num,cseq_method)
+    ipTuple := common.NewIPPortTuple(4,
+        net.ParseIP("10.0.0.1"), 1111,
+        net.ParseIP("10.0.0.2"), 2222)
+
+    headers := map[string][]common.NetString{}
+    to_h:=[]common.NetString{}
+    to_h=append(to_h,common.NetString(to))
+    from_h:=[]common.NetString{}
+    from_h=append(from_h,common.NetString(from))
+    pai_h:=[]common.NetString{}
+    pai_0:=`"0312341234" <tel:+81312341234;cpc=ordinary>`
+    pai_h=append(pai_h,common.NetString(`"0312341234" <tel:+81312341234;cpc=ordinary>`))
+    pai_1:=`<sip:+81312341234@hoge.com;user=phone;cpc=ordinary>`
+    pai_h=append(pai_h,common.NetString(`<sip:+81312341234@hoge.com;user=phone;cpc=ordinary>`))
+    callid:=`1-2363@192.168.122.252`
+    callid_h:=[]common.NetString{}
+    callid_h=append(callid_h,common.NetString(callid))
+    headers["from"]=from_h
+    headers["call-id"]=callid_h
+    headers["p-asserted-identity"]=pai_h
+    headers["to"]=to_h
+    headers["orig"]=to_h
+
+    msg:=sipMessage{transport:0,     raw:common.NetString(raw_text),
+                    tuple: ipTuple , method: common.NetString(method_text),
+                    requestUri: common.NetString(request_uri),
+                    from: common.NetString(from),
+                    to: common.NetString(to),
+                    cseq: common.NetString(cseq),
+                    callid: common.NetString("callid"),
+                    contentlength: 10,isRequest:true}
+    msg.headers= &headers
+
+    store:= &eventStore{}
+    sip.results=store.publish
+    sip.publishMessage(&msg)
+
+    stored:=store.events[0].Fields
+    assert.Equal(t, method_text, stored["sip.method"     ], "Invalid Method text" )
+    assert.Equal(t, request_uri, stored["sip.request-uri"], "Invalid Request URI" )
+    assert.Equal(t, to         , stored["sip.to"         ], "Invalid To text"     )
+    assert.Equal(t, from       , stored["sip.from"       ], "Invalid from text"   )
+    assert.Equal(t, cseq       , stored["sip.cseq"       ], "Invalid CSeq text"   )
+    assert.Equal(t, request_uri, stored["sip.request-uri"], "Invalid Request URI" )
+
+    userpart:="+8137890123;npdi;rn=+81312341234"
+    assert.Equal(t, userpart  ,     stored["sip.request-uri.user"]                       , "Invalid Request URI user info"        )
+    assert.Equal(t, "hoge.com",     stored["sip.request-uri.host"]                       , "Invalid Request URI host"             )
+    assert.Equal(t, 5060      ,     stored["sip.request-uri.port"]                       , "Invalid Request URI host"             )
+    assert.Contains(t         ,     stored["sip.request-uri.uri-params"], "user=phone"   , "Invalid Request URI parameter"        )
+    assert.Contains(t         ,     stored["sip.request-uri.uri-params"], "transport=udp", "Invalid Request URI parameter"        )
+    assert.Equal(t, 2         , len(stored["sip.request-uri.uri-params"].([]string))     , "Invalid Request URI parameter length" )
+
+    assert.Equal(t, "0311112222",     stored["sip.from.display"   ]               , "Invalid from display"    )
+    assert.Equal(t, "311112222" ,     stored["sip.from.user"      ]               , "Invalid from user"       )
+    assert.Equal(t, "sip.addr"  ,     stored["sip.from.host"      ]               , "Invalid from host"       )
+    assert.Equal(t, 5060        ,     stored["sip.from.port"      ]               , "Invalid from port"       )
+    assert.Equal(t, 1           , len(stored["sip.from.params"    ].([]string))   , "Invalid from params"     )
+    assert.Contains(t,                stored["sip.from.params"    ], "tag=FromTag", "Invalid from params"     )
+    assert.Equal(t, nil         ,     stored["sip.from.uri-params"]               , "Invalid from uri-params" )
+
+    headers_p:=(stored["sip.headers"].(common.MapStr))["from"].([]common.MapStr)
+    assert.Equal(t, common.NetString(from),     headers_p[0]["raw"       ]              , "Invalid from text"       )
+    assert.Equal(t, "0311112222"          ,     headers_p[0]["display"   ]              , "Invalid from display"    )
+    assert.Equal(t, "311112222"           ,     headers_p[0]["user"      ]              , "Invalid from user"       )
+    assert.Equal(t, "sip.addr"            ,     headers_p[0]["host"      ]              , "Invalid from host"       )
+    assert.Equal(t, 5060                  ,     headers_p[0]["port"      ]              , "Invalid from port"       )
+    assert.Contains(t                     ,     headers_p[0]["params"    ],"tag=FromTag", "Invalid from params"     )
+    assert.Equal(t, 1                     , len(headers_p[0]["params"    ].([]string))  , "Invalid from params"     )
+    assert.Equal(t, nil                   ,     headers_p[0]["uri-params"]              , "Invalid from uri-params" )
+
+    assert.Equal(t, nil          , stored["sip.to.display"     ], "Invalid to display"    )
+    assert.Equal(t, "612341234"  , stored["sip.to.user"        ], "Invalid to user"       )
+    assert.Equal(t, "192.168.0.1", stored["sip.to.host"        ], "Invalid to host"       )
+    assert.Equal(t, nil          , stored["sip.to.port"        ], "Invalid to port"       )
+    assert.Equal(t, nil          , stored["sip.to.params"      ], "Invalid to params"     )
+    assert.Equal(t, nil          , stored["sip.to.uri-params"  ], "Invalid to uri-params" )
+
+    headers_p =(stored["sip.headers"].(common.MapStr))["to"].([]common.MapStr)
+    assert.Equal(t, common.NetString(to)  , headers_p[0]["raw"        ],"Invalid to text"       )
+    assert.Equal(t, nil                   , headers_p[0]["display"    ],"Invalid to display"    )
+    assert.Equal(t, "612341234"           , headers_p[0]["user"       ],"Invalid to user"       )
+    assert.Equal(t, "192.168.0.1"         , headers_p[0]["host"       ],"Invalid to host"       )
+    assert.Equal(t, nil                   , headers_p[0]["port"       ],"Invalid to port"       )
+    assert.Equal(t, nil                   , headers_p[0]["params"     ],"Invalid to params"     )
+    assert.Equal(t, nil                   , headers_p[0]["uri-params" ],"Invalid to uri-params" )
+
+    headers_p =(stored["sip.headers"].(common.MapStr))[  "p-asserted-identity"].([]common.MapStr)
+    assert.Equal(t, common.NetString(pai_0), headers_p[0]["raw"        ],"Invalid p-asserted-identity text"       )
+    assert.Equal(t, "0312341234"           , headers_p[0]["display"    ],"Invalid p-asserted-identity display"    )
+    assert.Equal(t, nil                    , headers_p[0]["user"       ],"Invalid p-asserted-identity user"       )
+    assert.Equal(t, "+81312341234"         , headers_p[0]["host"       ],"Invalid p-asserted-identity host"       )
+    assert.Equal(t, nil                    , headers_p[0]["port"       ],"Invalid p-asserted-identity port"       )
+    assert.Equal(t, nil                    , headers_p[0]["params"     ],"Invalid p-asserted-identity params"     )
+    assert.Contains(t,     headers_p[0]["uri-params"], "cpc=ordinary"   ,"Invalid p-asserted-identity uri-params" )
+    assert.Equal(t, 1, len(headers_p[0]["uri-params"].([]string))       ,"Invalid p-asserted-identity uri-params" )
+    assert.Equal(t, common.NetString(pai_1), headers_p[1]["raw"        ],"Invalid p-asserted-identity text"       )
+    assert.Equal(t, nil                    , headers_p[1]["display"    ],"Invalid p-asserted-identity display"    )
+    assert.Equal(t, "+81312341234"         , headers_p[1]["user"       ],"Invalid p-asserted-identity user"       )
+    assert.Equal(t, "hoge.com"             , headers_p[1]["host"       ],"Invalid p-asserted-identity host"       )
+    assert.Equal(t, nil                    , headers_p[1]["port"       ],"Invalid p-asserted-identity port"       )
+    assert.Equal(t, nil                    , headers_p[1]["params"     ],"Invalid p-asserted-identity params"     )
+    assert.Contains(t,     headers_p[1]["uri-params"],"cpc=ordinary"    ,"Invalid p-asserted-identity uri-params" )
+    assert.Contains(t,     headers_p[1]["uri-params"],"user=phone"      ,"Invalid p-asserted-identity uri-params" )
+    assert.Equal(t, 2, len(headers_p[1]["uri-params"].([]string))       ,"Invalid p-asserted-identity uri-params" )
+
+    headers_p =(stored["sip.headers"].(common.MapStr))[   "call-id"].([]common.MapStr)
+    assert.Equal(t, common.NetString(callid), headers_p[0]["raw"        ],"Invalid call-id text"       )
+    assert.Equal(t, nil                     , headers_p[0]["display"    ],"Invalid call-id display"    )
+    assert.Equal(t, nil                     , headers_p[0]["user"       ],"Invalid call-id user"       )
+    assert.Equal(t, nil                     , headers_p[0]["host"       ],"Invalid call-id host"       )
+    assert.Equal(t, nil                     , headers_p[0]["port"       ],"Invalid call-id port"       )
+    assert.Equal(t, nil                     , headers_p[0]["params"     ],"Invalid call-id params"     )
+    assert.Equal(t, nil                     , headers_p[0]["uri-params" ],"Invalid call-id uri-params" )
+
+    headers_p =(stored["sip.headers"].(common.MapStr))["orig"].([]common.MapStr)
+    assert.Equal(t, common.NetString(to) , headers_p[0]["raw"        ],"Invalid orig text"       )
+    assert.Equal(t, nil                  , headers_p[0]["display"    ],"Invalid orig display"    )
+    assert.Equal(t, nil                  , headers_p[0]["user"       ],"Invalid orig user"       )
+    assert.Equal(t, nil                  , headers_p[0]["host"       ],"Invalid orig host"       )
+    assert.Equal(t, nil                  , headers_p[0]["port"       ],"Invalid orig port"       )
+    assert.Equal(t, nil                  , headers_p[0]["params"     ],"Invalid orig params"     )
+    assert.Equal(t, nil                  , headers_p[0]["uri-params" ],"Invalid orig uri-params" )
+
+    assert.Equal(t, cseq_num     , stored["sip.cseq.number"], "Invalid cseq number" )
+    assert.Equal(t, cseq_method  , stored["sip.cseq.method"], "Invalid cseq method" )
+}
 
 func TestCreateSIPMessage(t *testing.T) {
     sip:=sipPlugin{}
@@ -88,7 +239,6 @@ func TestCreateSIPMessage(t *testing.T) {
     assert.Equal(t, -1, sipMsg.bdy_start    , "Initialization check." )
     assert.Equal(t, -1, sipMsg.contentlength, "Initialization check." )
 }
-
 
 // Test Cases migrated from sip_test.go 2018-03-03
 // Test Constants
@@ -602,5 +752,278 @@ func TestParseUdp_compact_form(t *testing.T){
                         fmt.Sprintf("%s",(headers["via"].([]common.NetString))[2]),
                         fmt.Sprintf("There should be [%s].",via2))
     }
+}
+
+func TestPaseDetailURI(t *testing.T){
+    var uri string
+    var user_info string; var host string; var port string; var uri_params []string
+    sip:=sipPlugin{}
+
+    uri=`sip:0312341234@10.0.0.1:5060`
+    user_info, host, port, uri_params=sip.parseDetailURI(uri)
+    assert.Equal(t,"0312341234",   user_info,    "User info should be [0312341234]." )
+    assert.Equal(t,"10.0.0.1",     host,         "Host should be [10.0.0.1]." )
+    assert.Equal(t,"5060",         port,         "Port should be [5060]." )
+    assert.Equal(t,0,              len(uri_params),"Parameter length should be [1]." )
+
+    uri=`sip:0312341234@10.0.0.1:5060;user=phone`
+    user_info, host, port, uri_params=sip.parseDetailURI(uri)
+    assert.Equal(t,"0312341234",   user_info,    "User info should be [0312341234]." )
+    assert.Equal(t,"10.0.0.1",     host,         "Host should be [10.0.0.1]." )
+    assert.Equal(t,"5060",         port,         "Port should be [5060]." )
+    assert.Equal(t,1,              len(uri_params),"Parameter length should be [1]." )
+    assert.Contains(t,uri_params,  "user=phone", "Parameter should have [user=phone]." )
+
+    uri=`tel:+81312341234;user=phone`
+    user_info, host, port, uri_params=sip.parseDetailURI(uri)
+    assert.Equal(t,"",             user_info,      "User info should be []." )
+    assert.Equal(t,"+81312341234", host,           "Host should be [+81312341234]." )
+    assert.Equal(t,"",             port,           "Port should be []." )
+    assert.Equal(t,1,              len(uri_params),"Parameter length should be [1]." )
+    assert.Contains(t,uri_params,  "user=phone", "Parameter should have [user=phone]." )
+
+    uri=`sip:bob:password;npdi=yes;rn=0312341234@10.0.0.1:5060;user=phone;lr;transport=udp;ttl=3;method=INVITE;cpc=test`
+    user_info, host, port, uri_params=sip.parseDetailURI(uri)
+    assert.Equal(t,"bob:password;npdi=yes;rn=0312341234", user_info, "User info should be [bob:password;npdi=yes;rn=0312341234]." )
+    assert.Equal(t,"10.0.0.1",     host,           "Host should be [10.0.0.1]." )
+    assert.Equal(t,"5060",         port,           "Port should be [5060]." )
+    assert.Equal(t,6,              len(uri_params),"Parameter length should be [1]." )
+    assert.Contains(t,uri_params,  "user=phone", "Parameter should have [user=phone]." )
+    assert.Contains(t,uri_params,  "lr", "Parameter should have [lr]." )
+    assert.Contains(t,uri_params,  "transport=udp", "Parameter should have [transport=udp]." )
+    assert.Contains(t,uri_params,  "ttl=3", "Parameter should have [ttl=3]." )
+    assert.Contains(t,uri_params,  "method=INVITE", "Parameter should have [method=INVITE]." )
+    assert.Contains(t,uri_params,  "cpc=test", "Parameter should have [cpc=test]." )
+
+    uri=`sip:+81333334444;npdi;rn=+81312341234@[2001:ab:fe:3::5]:5060`
+    user_info, host, port, uri_params=sip.parseDetailURI(uri)
+    assert.Equal(t,"+81333334444;npdi;rn=+81312341234", user_info, "User info should be [+81333334444;npdi;rn=+81312341234]." )
+    assert.Equal(t,"[2001:ab:fe:3::5]",     host,           "Host should be [[2001:ab:fe:3::5]]." )
+    assert.Equal(t,"5060",         port,           "Port should be [5060]." )
+    assert.Equal(t,0,              len(uri_params),"Parameter length should be [1]." )
+
+}
+
+func TestParseDetailNameAddr(t *testing.T) {
+    sip := sipPlugin{}
+    name_addr:="\"display_name\"<sip:0312341234@10.0.0.1:5060;user=phone>;hogehoge"
+    display_name, user_info, host, port, uri_params, params:=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"display_name", display_name, "DisplayName should be [display_name]." )
+    assert.Equal(t,"0312341234",   user_info,    "User info should be [0312341234]." )
+    assert.Equal(t,"10.0.0.1",     host,         "Host should be [10.0.0.1]." )
+    assert.Equal(t,"5060",         port,         "Port should be [5060]." )
+    assert.Contains(t,uri_params,  "user=phone", "Parameter should have [user=phone]." )
+    assert.Contains(t,params,      "hogehoge",   "Parameter should have [hogehoge]." )
+
+    name_addr="<sip:0312341234@10.0.0.1>"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"",           display_name, "DisplayName should be []." )
+    assert.Equal(t,"0312341234", user_info,    "User info should be [0312341234]." )
+    assert.Equal(t,"10.0.0.1",   host,         "Host should be [10.0.0.1]." )
+    assert.Equal(t,port,         "",           "Port should be []." )
+    assert.Equal(t,0 , len(uri_params),"Parameter should not have any value." )
+    assert.Equal(t,0 , len(params),    "Parameter should not have any value." )
+
+    name_addr="Mr. Watson <sip:0312341234@10.0.0.1>"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"Mr. Watson",           display_name, "DisplayName should be []." )
+    assert.Equal(t,"0312341234", user_info,    "User info should be [0312341234]." )
+    assert.Equal(t,"10.0.0.1",   host,         "Host should be [10.0.0.1]." )
+    assert.Equal(t,port,         "",           "Port should be []." )
+    assert.Equal(t,0 , len(uri_params),"Parameter should not have any value." )
+    assert.Equal(t,0 , len(params),   "Parameter should not have any value." )
+
+    name_addr="\"display_name\"<sip:0312341234@10.0.0.1>"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"display_name", display_name, "DisplayName should be [display_name]." )
+    assert.Equal(t,"0312341234",   user_info,    "User info should be [0312341234]." )
+    assert.Equal(t,"10.0.0.1",     host,         "Host should be [10.0.0.1]." )
+    assert.Equal(t,port,           "",           "Port should be []." )
+    assert.Equal(t,0 , len(uri_params),"Parameter should not have any value." )
+    assert.Equal(t,0 , len(params),   "Parameter should not have any value." )
+
+    name_addr="<sip:whois.this;user=phone>"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"",            display_name, "DisplayName should be []." )
+    assert.Equal(t,"",            user_info,    "User info should be []." )
+    assert.Equal(t,"whois.this",  host,         "Host should be [whois.this]." )
+    assert.Equal(t,"",            port,         "Port should be []." )
+    assert.Contains(t,uri_params,"user=phone",  "Parameter should have [user=phone]." )
+    assert.Equal(t,0 , len(params),   "Parameter should not have any value." )
+
+    name_addr=" \"0333334444\" <sip:[2001:30:fe::4:123];user=phone >"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"0333334444",          display_name, "DisplayName should be [display_name]." )
+    assert.Equal(t,"",                    user_info,    "User info should be []." )
+    assert.Equal(t,"[2001:30:fe::4:123]", host,         "Host should be [2001:30:fe::4:123]." )
+    assert.Equal(t,"",                    port,         "Port should be [5060]." )
+    assert.Contains(t,uri_params,"user=phone",          "Parameter should have [user=phone]." )
+    assert.Equal(t, 0 , len(params),   "Parameter should not have any value." )
+
+    name_addr=" \"0333334444\" <sips:user:password@[2001:30:fe::4:123]:5060 ;user=phone>"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"0333334444",          display_name, "DisplayName should be [display_name]." )
+    assert.Equal(t,"user:password",       user_info,    "User info should be [user:password]." )
+    assert.Equal(t,"[2001:30:fe::4:123]", host,         "Host should be [2001:30:fe::4:123]." )
+    assert.Equal(t,"5060",                port,         "Port should be [5060]." )
+    assert.Contains(t,uri_params,"user=phone",          "Parameter should have [user=phone]." )
+    assert.Equal(t, 0 , len(params),   "Parameter should not have any value." )
+
+    name_addr="\"0312341234\"<tel:+81312341234;user=phone>;tag=1234"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"0312341234",   display_name, "DisplayName should be [0333334444]." )
+    assert.Equal(t,"",             user_info,    "User info should be []." )
+    assert.Equal(t,"+81312341234", host,         "Host should be [+81312341234]." )
+    assert.Equal(t,"",             port,         "Port should be [5060]." )
+    assert.Contains(t,uri_params,"user=phone",   "Parameter should have [user=phone]." )
+    assert.Contains(t,params,    "tag=1234",     "Parameter should have [user=phone]." )
+
+    name_addr="<tel:+81312341234:5060;user=phone>;tag=1234"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"",             display_name, "DisplayName should be [0333334444]." )
+    assert.Equal(t,"",             user_info,    "User info should be []." )
+    assert.Equal(t,"+81312341234", host,         "Host should be [+81312341234]." )
+    assert.Equal(t,"5060",         port,         "Port should be [5060]." )
+    assert.Contains(t,uri_params,"user=phone",   "Parameter should have [user=phone]." )
+    assert.Contains(t,params,    "tag=1234",     "Parameter should have [user=phone]." )
+
+    name_addr="<sip:a>;tag=1234"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"",  display_name, "DisplayName should be []." )
+    assert.Equal(t,"",  user_info,    "User info should be []." )
+    assert.Equal(t,"a", host,         "Host should be [a]." )
+    assert.Equal(t,"",  port,         "Port should be []." )
+    assert.Equal(t,0 , len(uri_params),"Parameter should not have any value." )
+    assert.Contains(t,params,    "tag=1234",   "Parameter should have [tag=1234]." )
+
+    name_addr="<sip:a>"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"",  display_name, "DisplayName should be []." )
+    assert.Equal(t,"",  user_info,    "User info should be []." )
+    assert.Equal(t,"a", host,         "Host should be [a]." )
+    assert.Equal(t,"",  port,         "Port should be []." )
+    assert.Equal(t,0 , len(uri_params),"Parameter should not have any value." )
+    assert.Equal(t,0 , len(params),   "Parameter should not have any value." )
+
+    name_addr=` "\"Tokyo\" is capital of \"Japan\""  <tel:+81312341234;user=phone >`
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,`\"Tokyo\" is capital of \"Japan\"`,
+                                   display_name, `DisplayName should be [\"Tokyo\" is capital of \"Japan\"].` )
+    assert.Equal(t,"",             user_info,    "User info should be []." )
+    assert.Equal(t,"+81312341234", host,         "Host should be [+81312341234]." )
+    assert.Equal(t,"",             port,         "Port should be []." )
+    assert.Contains(t,uri_params,  "user=phone",   "Parameter should have [user=phone]." )
+    assert.Equal(t,0 , len(params),   "Parameter should not have any value." )
+
+    name_addr=` "<::;@>"  <tel:+81312341234>;`
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,`<::;@>`, display_name, `DisplayName should be [<::;@>].` )
+    assert.Equal(t,"",             user_info,    "User info should be []." )
+    assert.Equal(t,"+81312341234", host,         "Host should be [+81312341234]." )
+    assert.Equal(t,"",             port,         "Port should be []." )
+    assert.Equal(t,0 , len(uri_params),"Parameter should not have any value." )
+    assert.Contains(t,params,    "",   "Parameter should have [user=phone]." )
+
+
+    // malformed case
+    name_addr="sip:10.0.0.1"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"", display_name, "DisplayName should be []." )
+    assert.Equal(t,"", user_info,    "User info should be []." )
+    assert.Equal(t,"", host,         "Host should be []." )
+    assert.Equal(t,"", port,         "Port should be []." )
+    assert.Equal(t,0 , len(uri_params),"Parameter should not have any value." )
+    assert.Equal(t,0 , len(params),  "Parameter should not have any value." )
+
+    // malformed case
+    name_addr="<10.0.0.1>"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"", display_name, "DisplayName should be []." )
+    assert.Equal(t,"", user_info,    "User info should be []." )
+    assert.Equal(t,"", host,         "Host should be []." )
+    assert.Equal(t,"", port,         "Port should be []." )
+    assert.Equal(t,0 , len(uri_params),"Parameter should not have any value." )
+    assert.Equal(t,0 , len(params),  "Parameter should not have any value." )
+
+    // malformed case
+    name_addr="<mail:10.0.0.1>;tag=1234"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"", display_name, "DisplayName should be []." )
+    assert.Equal(t,"", user_info,    "User info should be []." )
+    assert.Equal(t,"", host,         "Host should be []." )
+    assert.Equal(t,"", port,         "Port should be []." )
+    assert.Equal(t,0 , len(uri_params),"Parameter should not have any value." )
+    assert.Equal(t,1 , len(params),  "Parameter should not have any value." )
+
+    // malformed case
+    name_addr="<sip:>;tag=1234"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"", display_name, "DisplayName should be []." )
+    assert.Equal(t,"", user_info,    "User info should be []." )
+    assert.Equal(t,"", host,         "Host should be []." )
+    assert.Equal(t,"", port,         "Port should be []." )
+    assert.Equal(t,0 , len(uri_params),"Parameter should not have any value." )
+    assert.Contains(t,params,"tag=1234",   "Parameter should have [user=1234]." )
+
+    // malformed case
+    name_addr="<sip:>"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"",  display_name, "DisplayName should be []." )
+    assert.Equal(t,"",  user_info,    "User info should be []." )
+    assert.Equal(t,"", host,         "Host should be [a]." )
+    assert.Equal(t,"",  port,         "Port should be []." )
+    assert.Equal(t,0 , len(uri_params),"Parameter should not have any value." )
+    assert.Equal(t,0 , len(params),   "Parameter should not have any value." )
+
+    // malformed case
+    name_addr="\"test\"<sip:>"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"test",display_name,   "DisplayName should be []." )
+    assert.Equal(t,"",    user_info,      "User info should be []." )
+    assert.Equal(t,"",    host,           "Host should be [a]." )
+    assert.Equal(t,"",    port,           "Port should be []." )
+    assert.Equal(t,0 ,    len(uri_params),"Parameter should not have any value." )
+    assert.Equal(t,0 ,    len(params),    "Parameter should not have any value." )
+
+    // malformed case
+    name_addr="\"test\"<>;tag=1234"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"test",  display_name, "DisplayName should be []." )
+    assert.Equal(t,"",      user_info,    "User info should be []." )
+    assert.Equal(t,"",      host,         "Host should be [a]." )
+    assert.Equal(t,"",      port,         "Port should be []." )
+    assert.Equal(t,0 ,    len(uri_params),"Parameter should not have any value." )
+    assert.Equal(t,1 ,      len(params),   "Parameter should not have any value." )
+
+    // malformed case
+    name_addr="<tel:+81312341234:5060>tag=1234"
+    display_name, user_info, host, port, uri_params, params=sip.parseDetailNameAddr(name_addr)
+
+    assert.Equal(t,"",             display_name, "DisplayName should be [0333334444]." )
+    assert.Equal(t,"",             user_info,    "User info should be []." )
+    assert.Equal(t,"+81312341234", host,         "Host should be [+81312341234]." )
+    assert.Equal(t,"5060",         port,         "Port should be [5060]." )
+    assert.Equal(t,0 ,      len(uri_params),"Parameter should not have any value." )
+    assert.Equal(t,0 ,      len(params),   "Parameter should not have any value." )
 }
 

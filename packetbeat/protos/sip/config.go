@@ -6,10 +6,13 @@ import (
 
 type sipConfig struct {
     config.ProtocolCommon       `config:",inline"`
+    ParseDetail           bool  `config:"parse_detail"`
 }
 
 var (
     defaultConfig = sipConfig{
         ProtocolCommon: config.ProtocolCommon{},
+		ParseDetail: false,
     }
 )
+

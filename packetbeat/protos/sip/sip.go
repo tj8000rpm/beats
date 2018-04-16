@@ -29,6 +29,16 @@ const (
     SIP_STATUS_REJECTED         = 3
 )
 
+const (
+    SIP_DETAIL_URI            = 0
+    SIP_DETAIL_NAME_ADDR      = 1
+    SIP_DETAIL_INT            = 2
+    SIP_DETAIL_INT_METHOD     = 3
+    SIP_DETAIL_INT_INT_METHOD = 4
+    SIP_DETAIL_INT_STRING     = 5
+    SIP_DETAIL_INT_INT        = 6
+    SIP_DETAIL_INT_INT_STRING = 7
+)
 
 func init() {
     // Memo: Secound argment*New* is below New function.

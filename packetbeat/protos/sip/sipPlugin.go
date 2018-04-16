@@ -22,6 +22,7 @@ type sipPlugin struct {
     // Configuration data.
     ports              []int
     parseDetail        bool
+    parseSet           map[string]int
 
     results protos.Reporter // Channel where results are pushed.
 }
@@ -29,9 +30,32 @@ type sipPlugin struct {
 func (sip *sipPlugin) init(results protos.Reporter, config *sipConfig) error {
     sip.setFromConfig(config)
 
+    if sip.parseDetail{
+        sip.initDetailOption()
+    }
+
     sip.results = results
 
     return nil
+}
+
+func (sip *sipPlugin) initDetailOption(){
+    // Detail of headers
+    sip.parseSet = make(map[string]int)
+    sip.parseSet["from"                ] = SIP_DETAIL_NAME_ADDR
+    sip.parseSet["to"                  ] = SIP_DETAIL_NAME_ADDR
+    sip.parseSet["contact"             ] = SIP_DETAIL_NAME_ADDR
+    sip.parseSet["record-route"        ] = SIP_DETAIL_NAME_ADDR
+    sip.parseSet["p-asserted-identity" ] = SIP_DETAIL_NAME_ADDR
+    sip.parseSet["p-preferred-identity"] = SIP_DETAIL_NAME_ADDR
+    sip.parseSet["cseq"                ] = SIP_DETAIL_INT_METHOD
+    sip.parseSet["rack"                ] = SIP_DETAIL_INT_INT_METHOD
+    sip.parseSet["rseq"                ] = SIP_DETAIL_INT
+    sip.parseSet["content-length"      ] = SIP_DETAIL_INT
+    sip.parseSet["max-forwards"        ] = SIP_DETAIL_INT
+    sip.parseSet["expires"             ] = SIP_DETAIL_INT
+    sip.parseSet["session-expires"     ] = SIP_DETAIL_INT
+    sip.parseSet["min-se"              ] = SIP_DETAIL_INT
 }
 
 // Set config values sip ports.
@@ -117,16 +141,6 @@ func (sip *sipPlugin) publishMessage(msg *sipMessage) {
             if len(addrparams) > 0 { fields["sip.request-uri-params"] = addrparams }
         }
 
-        // Detail of headers
-        parseSet := make(map[string]int)
-        parseSet["from"                ] = SIP_DETAIL_NAME_ADDR
-        parseSet["to"                  ] = SIP_DETAIL_NAME_ADDR
-        parseSet["contact"             ] = SIP_DETAIL_NAME_ADDR
-        parseSet["record-route"        ] = SIP_DETAIL_NAME_ADDR
-        parseSet["p-asserted-identity" ] = SIP_DETAIL_NAME_ADDR
-        parseSet["p-preferred-identity"] = SIP_DETAIL_NAME_ADDR
-        parseSet["cseq"                ] = SIP_DETAIL_CSEQ
-
         for key,values := range sipHeaders{
             newval:=[]common.MapStr{}
 
@@ -134,7 +148,7 @@ func (sip *sipPlugin) publishMessage(msg *sipMessage) {
                 newobj:=common.MapStr{}
                 newobj[ "raw" ] = header_s
 
-                if mode, ok := parseSet[key]; ok{
+                if mode, ok := sip.parseSet[key]; ok{
                     switch(mode){
                     case SIP_DETAIL_NAME_ADDR:
                         display_name, user_info, host, port,addrparams, params = sip.parseDetailNameAddr(fmt.Sprintf("%s",header_s))
@@ -147,13 +161,31 @@ func (sip *sipPlugin) publishMessage(msg *sipMessage) {
                         if addrparams != nil && len(addrparams) > 0 { newobj["uri-params"] = addrparams }
                         if params     != nil && len(params)     > 0 { newobj["params"    ] = params     }
 
-                    case SIP_DETAIL_CSEQ:
-                        cseqs:=strings.SplitN(fmt.Sprintf("%s",header_s)," ",2)
-                        number,err=strconv.Atoi(strings.TrimSpace(cseqs[0]))
+                    case SIP_DETAIL_INT:
+                        number,err=strconv.Atoi(strings.TrimSpace(fmt.Sprintf("%s",header_s)))
                         if err==nil{
                             newobj["number"]=number
                         }
-                        newobj["method"]=strings.TrimSpace(cseqs[1])
+
+                    case SIP_DETAIL_INT_METHOD:
+                        values:=strings.SplitN(fmt.Sprintf("%s",header_s)," ",2)
+                        number,err=strconv.Atoi(strings.TrimSpace(values[0]))
+                        if err==nil{
+                            newobj["number"]=number
+                        }
+                        newobj["method"]=strings.TrimSpace(values[1])
+
+                    case SIP_DETAIL_INT_INT_METHOD:
+                        values:=strings.SplitN(fmt.Sprintf("%s",header_s)," ",3)
+                        number,err=strconv.Atoi(strings.TrimSpace(values[0]))
+                        if err==nil{
+                            newobj["number1"]=number
+                        }
+                        number,err=strconv.Atoi(strings.TrimSpace(values[1]))
+                        if err==nil{
+                            newobj["number2"]=number
+                        }
+                        newobj["method"]=strings.TrimSpace(values[2])
                     }
                 }
                 newval=append(newval,newobj)
@@ -337,6 +369,13 @@ func (sip *sipPlugin) parseDetailNameAddr(addr string) (display_name string,user
         curChar:=rune(addr[idx])
         // Display name
         if !in_addr && display_name == "" && user_info == "" && host == "" {
+            if idx == 0 && idx+5 < len(addr){
+                if addr[idx:idx+5] == "sips:" || addr[idx:idx+4] == "sip:" || addr[idx:idx+4] == "tel:"{
+                    user_info,host,port,addrparams=sip.parseDetailURI(addr[idx:])
+                    idx=len(addr)
+                    break
+                }
+            }
             if idx == 0 && curChar != '<'{
                 pos=idx
                 if curChar== '"'{
@@ -372,6 +411,7 @@ func (sip *sipPlugin) parseDetailNameAddr(addr string) (display_name string,user
                 }
             }
         }
+
         prevChar=curChar
     }
 

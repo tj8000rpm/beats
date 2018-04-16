@@ -117,6 +117,9 @@ func TestPublishMessageWithDetailOptionRequest(t *testing.T) {
     headers["p-asserted-identity"]=pai_h
     headers["to"]=to_h
     headers["orig"]=to_h
+    cseq_h:=[]common.NetString{}
+    cseq_h=append(cseq_h,common.NetString(cseq))
+    headers["cseq"]=cseq_h
 
     msg:=sipMessage{transport:0,     raw:common.NetString(raw_text),
                     tuple: ipTuple , method: common.NetString(method_text),
@@ -133,27 +136,19 @@ func TestPublishMessageWithDetailOptionRequest(t *testing.T) {
     sip.publishMessage(&msg)
 
     stored:=store.events[0].Fields
-    assert.Equal(t, method_text, stored["sip.method"         ], "Invalid Method text" )
-    assert.Equal(t, request_uri, stored["sip.request-uri.raw"], "Invalid Request URI" )
-    assert.Equal(t, to         , stored["sip.to.raw"         ], "Invalid To text"     )
-    assert.Equal(t, from       , stored["sip.from.raw"       ], "Invalid from text"   )
-    assert.Equal(t, cseq       , stored["sip.cseq.raw"       ], "Invalid CSeq text"   )
+    assert.Equal(t, method_text, stored["sip.method"     ], "Invalid Method text" )
+    assert.Equal(t, request_uri, stored["sip.request-uri"], "Invalid Request URI" )
+    assert.Equal(t, to         , stored["sip.to"         ], "Invalid To text"     )
+    assert.Equal(t, from       , stored["sip.from"       ], "Invalid from text"   )
+    assert.Equal(t, cseq       , stored["sip.cseq"       ], "Invalid CSeq text"   )
 
     userpart:="+8137890123;npdi;rn=+81312341234"
-    assert.Equal(t, userpart  ,     stored["sip.request-uri.user"]                       , "Invalid Request URI user info"        )
-    assert.Equal(t, "hoge.com",     stored["sip.request-uri.host"]                       , "Invalid Request URI host"             )
-    assert.Equal(t, 5060      ,     stored["sip.request-uri.port"]                       , "Invalid Request URI host"             )
-    assert.Contains(t         ,     stored["sip.request-uri.uri-params"], "user=phone"   , "Invalid Request URI parameter"        )
-    assert.Contains(t         ,     stored["sip.request-uri.uri-params"], "transport=udp", "Invalid Request URI parameter"        )
-    assert.Equal(t, 2         , len(stored["sip.request-uri.uri-params"].([]string))     , "Invalid Request URI parameter length" )
-
-    assert.Equal(t, "0311112222",     stored["sip.from.display"   ]               , "Invalid from display"    )
-    assert.Equal(t, "311112222" ,     stored["sip.from.user"      ]               , "Invalid from user"       )
-    assert.Equal(t, "sip.addr"  ,     stored["sip.from.host"      ]               , "Invalid from host"       )
-    assert.Equal(t, 5060        ,     stored["sip.from.port"      ]               , "Invalid from port"       )
-    assert.Equal(t, 1           , len(stored["sip.from.params"    ].([]string))   , "Invalid from params"     )
-    assert.Contains(t,                stored["sip.from.params"    ], "tag=FromTag", "Invalid from params"     )
-    assert.Equal(t, nil         ,     stored["sip.from.uri-params"]               , "Invalid from uri-params" )
+    assert.Equal(t, userpart  ,     stored["sip.request-uri-user"  ]                 , "Invalid Request URI user info"        )
+    assert.Equal(t, "hoge.com",     stored["sip.request-uri-host"  ]                 , "Invalid Request URI host"             )
+    assert.Equal(t, 5060      ,     stored["sip.request-uri-port"  ]                 , "Invalid Request URI host"             )
+    assert.Contains(t         ,     stored["sip.request-uri-params"], "user=phone"   , "Invalid Request URI parameter"        )
+    assert.Contains(t         ,     stored["sip.request-uri-params"], "transport=udp", "Invalid Request URI parameter"        )
+    assert.Equal(t, 2         , len(stored["sip.request-uri-params"].([]string))     , "Invalid Request URI parameter length" )
 
     headers_p:=(stored["sip.headers"].(common.MapStr))["from"].([]common.MapStr)
     assert.Equal(t, common.NetString(from),     headers_p[0]["raw"       ]              , "Invalid from text"       )
@@ -164,13 +159,6 @@ func TestPublishMessageWithDetailOptionRequest(t *testing.T) {
     assert.Contains(t                     ,     headers_p[0]["params"    ],"tag=FromTag", "Invalid from params"     )
     assert.Equal(t, 1                     , len(headers_p[0]["params"    ].([]string))  , "Invalid from params"     )
     assert.Equal(t, nil                   ,     headers_p[0]["uri-params"]              , "Invalid from uri-params" )
-
-    assert.Equal(t, nil          , stored["sip.to.display"     ], "Invalid to display"    )
-    assert.Equal(t, "612341234"  , stored["sip.to.user"        ], "Invalid to user"       )
-    assert.Equal(t, "192.168.0.1", stored["sip.to.host"        ], "Invalid to host"       )
-    assert.Equal(t, nil          , stored["sip.to.port"        ], "Invalid to port"       )
-    assert.Equal(t, nil          , stored["sip.to.params"      ], "Invalid to params"     )
-    assert.Equal(t, nil          , stored["sip.to.uri-params"  ], "Invalid to uri-params" )
 
     headers_p =(stored["sip.headers"].(common.MapStr))["to"].([]common.MapStr)
     assert.Equal(t, common.NetString(to)  , headers_p[0]["raw"        ],"Invalid to text"       )
@@ -218,8 +206,9 @@ func TestPublishMessageWithDetailOptionRequest(t *testing.T) {
     assert.Equal(t, nil                  , headers_p[0]["params"     ],"Invalid orig params"     )
     assert.Equal(t, nil                  , headers_p[0]["uri-params" ],"Invalid orig uri-params" )
 
-    assert.Equal(t, cseq_num     , stored["sip.cseq.number"], "Invalid cseq number" )
-    assert.Equal(t, cseq_method  , stored["sip.cseq.method"], "Invalid cseq method" )
+    headers_p =(stored["sip.headers"].(common.MapStr))["cseq"].([]common.MapStr)
+    assert.Equal(t, cseq_num     , headers_p[0]["number"], "Invalid cseq number" )
+    assert.Equal(t, cseq_method  , headers_p[0]["method"], "Invalid cseq method" )
 }
 
 func TestPublishMessageWithDetailOptionResponse(t *testing.T) {
@@ -249,6 +238,9 @@ func TestPublishMessageWithDetailOptionResponse(t *testing.T) {
     headers["call-id"]=callid_h
     headers["to"]=to_h
     headers["orig"]=to_h
+    cseq_h:=[]common.NetString{}
+    cseq_h=append(cseq_h,common.NetString(cseq))
+    headers["cseq"]=cseq_h
 
     msg:=sipMessage{ transport:0,     raw:common.NetString(raw_text),
                      tuple: ipTuple ,
@@ -268,17 +260,9 @@ func TestPublishMessageWithDetailOptionResponse(t *testing.T) {
     stored:=store.events[0].Fields
     assert.Equal(t, status_text       , stored["sip.status-phrase"], "Invalid Status Phrase" )
     assert.Equal(t, int(status_number), stored["sip.status-code"  ], "Invalid Status Code"   )
-    assert.Equal(t, to                , stored["sip.to.raw"       ], "Invalid To text"       )
-    assert.Equal(t, from              , stored["sip.from.raw"     ], "Invalid from text"     )
-    assert.Equal(t, cseq              , stored["sip.cseq.raw"     ], "Invalid CSeq text"     )
-
-    assert.Equal(t, "0311112222",     stored["sip.from.display"   ]               , "Invalid from display"    )
-    assert.Equal(t, "311112222" ,     stored["sip.from.user"      ]               , "Invalid from user"       )
-    assert.Equal(t, "sip.addr"  ,     stored["sip.from.host"      ]               , "Invalid from host"       )
-    assert.Equal(t, 5060        ,     stored["sip.from.port"      ]               , "Invalid from port"       )
-    assert.Equal(t, 1           , len(stored["sip.from.params"    ].([]string))   , "Invalid from params"     )
-    assert.Contains(t,                stored["sip.from.params"    ], "tag=FromTag", "Invalid from params"     )
-    assert.Equal(t, nil         ,     stored["sip.from.uri-params"]               , "Invalid from uri-params" )
+    assert.Equal(t, to                , stored["sip.to"           ], "Invalid To text"       )
+    assert.Equal(t, from              , stored["sip.from"         ], "Invalid from text"     )
+    assert.Equal(t, cseq              , stored["sip.cseq"         ], "Invalid CSeq text"     )
 
     headers_p:=(stored["sip.headers"].(common.MapStr))["from"].([]common.MapStr)
     assert.Equal(t, common.NetString(from),     headers_p[0]["raw"       ]              , "Invalid from text"       )
@@ -289,14 +273,6 @@ func TestPublishMessageWithDetailOptionResponse(t *testing.T) {
     assert.Contains(t                     ,     headers_p[0]["params"    ],"tag=FromTag", "Invalid from params"     )
     assert.Equal(t, 1                     , len(headers_p[0]["params"    ].([]string))  , "Invalid from params"     )
     assert.Equal(t, nil                   ,     headers_p[0]["uri-params"]              , "Invalid from uri-params" )
-
-    assert.Equal(t, nil          , stored["sip.to.display"     ]               , "Invalid to display"    )
-    assert.Equal(t, "612341234"  , stored["sip.to.user"        ]               , "Invalid to user"       )
-    assert.Equal(t, "192.168.0.1", stored["sip.to.host"        ]               , "Invalid to host"       )
-    assert.Equal(t, nil          , stored["sip.to.port"        ]               , "Invalid to port"       )
-    assert.Equal(t, 1        , len(stored["sip.to.params"      ].([]string))   , "Invalid to params"     )
-    assert.Contains(t,             stored["sip.to.params"      ], "tag=ToTag"  , "Invalid to params"     )
-    assert.Equal(t, nil          , stored["sip.to.uri-params"  ]               , "Invalid to uri-params" )
 
     headers_p =(stored["sip.headers"].(common.MapStr))["to"].([]common.MapStr)
     assert.Equal(t, common.NetString(to)  , headers_p[0]["raw"        ]           , "Invalid to text"       )
@@ -326,8 +302,9 @@ func TestPublishMessageWithDetailOptionResponse(t *testing.T) {
     assert.Equal(t, nil                  , headers_p[0]["params"     ],"Invalid orig params"     )
     assert.Equal(t, nil                  , headers_p[0]["uri-params" ],"Invalid orig uri-params" )
 
-    assert.Equal(t, cseq_num     , stored["sip.cseq.number"], "Invalid cseq number" )
-    assert.Equal(t, cseq_method  , stored["sip.cseq.method"], "Invalid cseq method" )
+    headers_p =(stored["sip.headers"].(common.MapStr))["cseq"].([]common.MapStr)
+    assert.Equal(t, cseq_num     , headers_p[0]["number"], "Invalid cseq number" )
+    assert.Equal(t, cseq_method  , headers_p[0]["method"], "Invalid cseq method" )
 }
 
 func TestCreateSIPMessage(t *testing.T) {

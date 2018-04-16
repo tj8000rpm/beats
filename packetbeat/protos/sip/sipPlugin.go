@@ -104,48 +104,28 @@ func (sip *sipPlugin) publishMessage(msg *sipMessage) {
         var number int
         var err error
 
-        // Detail of mandatory headers
-        for _,v := range []string{"from","to"}{
-            display_name, user_info, host, port,addrparams, params = sip.parseDetailNameAddr(fields["sip."+v].(string))
-
-            fields["sip."+v+".raw" ] = fields["sip."+v].(string)
-            delete(fields,"sip."+v)
-
-            if display_name != "" { fields["sip."+v+".display" ] = display_name }
-            if user_info    != "" { fields["sip."+v+".user"    ] = user_info    }
-            if host         != "" { fields["sip."+v+".host"    ] = host         }
-
-            number,err=strconv.Atoi(strings.TrimSpace(port))
-            if err==nil{
-                fields["sip."+v+".port"]     = number
-            }
-            if len(addrparams) > 0 { fields["sip."+v+".uri-params"] = addrparams }
-            if len(params)     > 0 { fields["sip."+v+".params"]     = params }
-        }
-
         // Detail of Request-URI
-        if _, ok := fields["sip.request-uri"]; ok {
-            user_info, host, port,addrparams = sip.parseDetailURI(fields["sip.request-uri"].(string))
+        if value, ok := fields["sip.request-uri"]; ok {
+            user_info, host, port,addrparams = sip.parseDetailURI(value.(string))
 
-            fields["sip.request-uri.raw" ] = fields["sip.request-uri"].(string)
-            delete(fields,"sip.request-uri")
-            
-            fields["sip.request-uri.user"     ]    = user_info
+            fields["sip.request-uri-user"    ]     = user_info
             number,err=strconv.Atoi(strings.TrimSpace(port))
             if err==nil{
-                fields["sip.request-uri.port"]     = number
+                fields["sip.request-uri-port"]     = number
             }
-            fields["sip.request-uri.host"]         = host
-            if len(addrparams) > 0 { fields["sip.request-uri.uri-params"] = addrparams }
+            fields["sip.request-uri-host"]         = host
+            if len(addrparams) > 0 { fields["sip.request-uri-params"] = addrparams }
         }
 
-        // Detail of option headers
-        //*
-        parseSet := make(map[string]struct{})
-        parseSet["from"]=struct{}{};      parseSet["to"]=struct{}{}
-        parseSet["contact"]=struct{}{};   parseSet["record-route"]=struct{}{}
-        parseSet["p-asserted-identity"]=struct{}{};
-        parseSet["p-preferred-identity"]=struct{}{};
+        // Detail of headers
+        parseSet := make(map[string]int)
+        parseSet["from"                ] = SIP_DETAIL_NAME_ADDR
+        parseSet["to"                  ] = SIP_DETAIL_NAME_ADDR
+        parseSet["contact"             ] = SIP_DETAIL_NAME_ADDR
+        parseSet["record-route"        ] = SIP_DETAIL_NAME_ADDR
+        parseSet["p-asserted-identity" ] = SIP_DETAIL_NAME_ADDR
+        parseSet["p-preferred-identity"] = SIP_DETAIL_NAME_ADDR
+        parseSet["cseq"                ] = SIP_DETAIL_CSEQ
 
         for key,values := range sipHeaders{
             newval:=[]common.MapStr{}
@@ -154,34 +134,33 @@ func (sip *sipPlugin) publishMessage(msg *sipMessage) {
                 newobj:=common.MapStr{}
                 newobj[ "raw" ] = header_s
 
-                if _, ok := parseSet[key]; ok{
-                    display_name, user_info, host, port,addrparams, params = sip.parseDetailNameAddr(fmt.Sprintf("%s",header_s))
+                if mode, ok := parseSet[key]; ok{
+                    switch(mode){
+                    case SIP_DETAIL_NAME_ADDR:
+                        display_name, user_info, host, port,addrparams, params = sip.parseDetailNameAddr(fmt.Sprintf("%s",header_s))
 
-                    number,err = strconv.Atoi(port)
-                    if display_name != "" { newobj[ "display" ] = display_name }
-                    if user_info != ""    { newobj[ "user"    ] = user_info    }
-                    if host != ""         { newobj[ "host"    ] = host         }
-                    if err  == nil        { newobj[ "port"    ] = number       }
-                    if addrparams != nil && len(addrparams) > 0 { newobj["uri-params"] = addrparams }
-                    if params     != nil && len(params)     > 0 { newobj["params"    ] = params     }
+                        number,err = strconv.Atoi(port)
+                        if display_name != "" { newobj[ "display" ] = display_name }
+                        if user_info != ""    { newobj[ "user"    ] = user_info    }
+                        if host != ""         { newobj[ "host"    ] = host         }
+                        if err  == nil        { newobj[ "port"    ] = number       }
+                        if addrparams != nil && len(addrparams) > 0 { newobj["uri-params"] = addrparams }
+                        if params     != nil && len(params)     > 0 { newobj["params"    ] = params     }
+
+                    case SIP_DETAIL_CSEQ:
+                        cseqs:=strings.SplitN(fmt.Sprintf("%s",header_s)," ",2)
+                        number,err=strconv.Atoi(strings.TrimSpace(cseqs[0]))
+                        if err==nil{
+                            newobj["number"]=number
+                        }
+                        newobj["method"]=strings.TrimSpace(cseqs[1])
+                    }
                 }
                 newval=append(newval,newobj)
             }
             sipHeaders[key]=newval
         }
-        //fmt.Printf("%s\n", sipHeaders)
-        //*/
-
-        fields["sip.cseq.raw" ] = fields["sip.cseq"].(string)
-        cseqs:=strings.SplitN(fields["sip.cseq"].(string)," ",2)
-        number,err=strconv.Atoi(strings.TrimSpace(cseqs[0]))
-        if err==nil{
-            fields["sip.cseq.number"]=number
-        }
-        fields["sip.cseq.method"]=strings.TrimSpace(cseqs[1])
-        delete(fields,"sip.cseq")
     }
-
 
     if msg.notes != nil{
         fields["sip.notes"] = fmt.Sprintf("%s",msg.notes)

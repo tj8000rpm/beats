@@ -121,14 +121,16 @@ func (sip *sipPlugin) publishMessage(msg *sipMessage) {
         }
 
         // Detail of Request-URI
-        user_info, host, port,addrparams = sip.parseDetailURI(fields["sip.request-uri"].(string))
-        fields["sip.request-uri.user"     ]    = user_info
-        number,err=strconv.Atoi(strings.TrimSpace(port))
-        if err==nil{
-            fields["sip.request-uri.port"]     = number
+        if _, ok := fields["sip.request-uri"]; ok {
+            user_info, host, port,addrparams = sip.parseDetailURI(fields["sip.request-uri"].(string))
+            fields["sip.request-uri.user"     ]    = user_info
+            number,err=strconv.Atoi(strings.TrimSpace(port))
+            if err==nil{
+                fields["sip.request-uri.port"]     = number
+            }
+            fields["sip.request-uri.host"]         = host
+            if len(addrparams) > 0 { fields["sip.request-uri.uri-params"] = addrparams }
         }
-        fields["sip.request-uri.host"]         = host
-        if len(addrparams) > 0 { fields["sip.request-uri.uri-params"] = addrparams }
 
         // Detail of option headers
         //*

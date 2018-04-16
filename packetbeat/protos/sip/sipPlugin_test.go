@@ -133,12 +133,11 @@ func TestPublishMessageWithDetailOptionRequest(t *testing.T) {
     sip.publishMessage(&msg)
 
     stored:=store.events[0].Fields
-    assert.Equal(t, method_text, stored["sip.method"     ], "Invalid Method text" )
-    assert.Equal(t, request_uri, stored["sip.request-uri"], "Invalid Request URI" )
-    assert.Equal(t, to         , stored["sip.to"         ], "Invalid To text"     )
-    assert.Equal(t, from       , stored["sip.from"       ], "Invalid from text"   )
-    assert.Equal(t, cseq       , stored["sip.cseq"       ], "Invalid CSeq text"   )
-    assert.Equal(t, request_uri, stored["sip.request-uri"], "Invalid Request URI" )
+    assert.Equal(t, method_text, stored["sip.method"         ], "Invalid Method text" )
+    assert.Equal(t, request_uri, stored["sip.request-uri.raw"], "Invalid Request URI" )
+    assert.Equal(t, to         , stored["sip.to.raw"         ], "Invalid To text"     )
+    assert.Equal(t, from       , stored["sip.from.raw"       ], "Invalid from text"   )
+    assert.Equal(t, cseq       , stored["sip.cseq.raw"       ], "Invalid CSeq text"   )
 
     userpart:="+8137890123;npdi;rn=+81312341234"
     assert.Equal(t, userpart  ,     stored["sip.request-uri.user"]                       , "Invalid Request URI user info"        )
@@ -269,9 +268,9 @@ func TestPublishMessageWithDetailOptionResponse(t *testing.T) {
     stored:=store.events[0].Fields
     assert.Equal(t, status_text       , stored["sip.status-phrase"], "Invalid Status Phrase" )
     assert.Equal(t, int(status_number), stored["sip.status-code"  ], "Invalid Status Code"   )
-    assert.Equal(t, to                , stored["sip.to"           ], "Invalid To text"       )
-    assert.Equal(t, from              , stored["sip.from"         ], "Invalid from text"     )
-    assert.Equal(t, cseq              , stored["sip.cseq"         ], "Invalid CSeq text"     )
+    assert.Equal(t, to                , stored["sip.to.raw"       ], "Invalid To text"       )
+    assert.Equal(t, from              , stored["sip.from.raw"     ], "Invalid from text"     )
+    assert.Equal(t, cseq              , stored["sip.cseq.raw"     ], "Invalid CSeq text"     )
 
     assert.Equal(t, "0311112222",     stored["sip.from.display"   ]               , "Invalid from display"    )
     assert.Equal(t, "311112222" ,     stored["sip.from.user"      ]               , "Invalid from user"       )

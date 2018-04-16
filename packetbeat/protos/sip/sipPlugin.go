@@ -108,6 +108,9 @@ func (sip *sipPlugin) publishMessage(msg *sipMessage) {
         for _,v := range []string{"from","to"}{
             display_name, user_info, host, port,addrparams, params = sip.parseDetailNameAddr(fields["sip."+v].(string))
 
+            fields["sip."+v+".raw" ] = fields["sip."+v].(string)
+            delete(fields,"sip."+v)
+
             if display_name != "" { fields["sip."+v+".display" ] = display_name }
             if user_info    != "" { fields["sip."+v+".user"    ] = user_info    }
             if host         != "" { fields["sip."+v+".host"    ] = host         }
@@ -123,6 +126,10 @@ func (sip *sipPlugin) publishMessage(msg *sipMessage) {
         // Detail of Request-URI
         if _, ok := fields["sip.request-uri"]; ok {
             user_info, host, port,addrparams = sip.parseDetailURI(fields["sip.request-uri"].(string))
+
+            fields["sip.request-uri.raw" ] = fields["sip.request-uri"].(string)
+            delete(fields,"sip.request-uri")
+            
             fields["sip.request-uri.user"     ]    = user_info
             number,err=strconv.Atoi(strings.TrimSpace(port))
             if err==nil{
@@ -165,12 +172,14 @@ func (sip *sipPlugin) publishMessage(msg *sipMessage) {
         //fmt.Printf("%s\n", sipHeaders)
         //*/
 
+        fields["sip.cseq.raw" ] = fields["sip.cseq"].(string)
         cseqs:=strings.SplitN(fields["sip.cseq"].(string)," ",2)
         number,err=strconv.Atoi(strings.TrimSpace(cseqs[0]))
         if err==nil{
             fields["sip.cseq.number"]=number
         }
         fields["sip.cseq.method"]=strings.TrimSpace(cseqs[1])
+        delete(fields,"sip.cseq")
     }
 
 

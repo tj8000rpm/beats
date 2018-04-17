@@ -192,6 +192,156 @@ a=rtpmap:0 PCMU/8000
 
 ```json
 {
+  "_id": "vTw21GIB6soIUJW6xglP",
+  "_index": "packetbeat-7.0.0-alpha1-2018.04.18",
+  "_source": {
+    "@timestamp": "2018-04-17T15:26:33.217Z",
+    "beat": {
+      "hostname": "TJ-X220-LNX",
+      "name": "TJ-X220-LNX",
+      "version": "7.0.0-alpha1"
+    },
+    "sip.body": {
+      "application/sdp": {
+        "a": [
+          "rtpmap:0 PCMU/8000"
+        ],
+        "c": [
+          "IN IP4 127.0.1.1"
+        ],
+        "m": [
+          "audio 6000 RTP/AVP 0"
+        ],
+        "o": [
+          "user1 53655765 2353687637 IN IP4 127.0.1.1"
+        ],
+        "s": [
+          "-"
+        ],
+        "t": [
+          "0 0"
+        ],
+        "v": [
+          "0"
+        ]
+      }
+    },
+    "sip.call-id": "1-30404@127.0.1.1",
+    "sip.cseq": "1 INVITE",
+    "sip.dst": "192.168.0.23:5060",
+    "sip.from": "sipp <sip:sipp@127.0.1.1:5060>;tag=30404SIPpTag001",
+    "sip.headers": {
+      "call-id": [
+        {
+          "raw": "1-30404@127.0.1.1"
+        }
+      ],
+      "contact": [
+        {
+          "host": "127.0.1.1",
+          "port": 5060,
+          "raw": "sip:sipp@127.0.1.1:5060",
+          "user": "sipp"
+        }
+      ],
+      "content-length": [
+        {
+          "number": 129,
+          "raw": "129"
+        }
+      ],
+      "content-type": [
+        {
+          "raw": "application/sdp"
+        }
+      ],
+      "cseq": [
+        {
+          "method": "INVITE",
+          "number": 1,
+          "raw": "1 INVITE"
+        }
+      ],
+      "from": [
+        {
+          "display": "sipp",
+          "host": "127.0.1.1",
+          "params": [
+            "tag=30404SIPpTag001"
+          ],
+          "port": 5060,
+          "raw": "sipp <sip:sipp@127.0.1.1:5060>;tag=30404SIPpTag001",
+          "user": "sipp"
+        }
+      ],
+      "max-forwards": [
+        {
+          "number": 70,
+          "raw": "70"
+        }
+      ],
+      "subject": [
+        {
+          "raw": "Performance Test"
+        }
+      ],
+      "to": [
+        {
+          "display": "service",
+          "host": "192.168.0.23",
+          "port": 5060,
+          "raw": "service <sip:service@192.168.0.23:5060>",
+          "user": "service"
+        }
+      ],
+      "via": [
+        {
+          "raw": "SIP/2.0/UDP 127.0.1.1:5060;branch=z9hG4bK-30404-1-0"
+        }
+      ]
+    },
+    "sip.method": "INVITE",
+    "sip.raw" : """
+INVITE sip:service@192.168.0.23:5060 SIP/2.0
+Via: SIP/2.0/UDP 127.0.1.1:5060;branch=z9hG4bK-30404-1-0
+From: sipp <sip:sipp@127.0.1.1:5060>;tag=30404SIPpTag001
+To: service <sip:service@192.168.0.23:5060>
+Call-ID: 1-30404@127.0.1.1
+CSeq: 1 INVITE
+Contact: sip:sipp@127.0.1.1:5060
+Max-Forwards: 70
+Subject: Performance Test
+Content-Type: application/sdp
+Content-Length:   129
+
+v=0
+o=user1 53655765 2353687637 IN IP4 127.0.1.1
+s=-
+c=IN IP4 127.0.1.1
+t=0 0
+m=audio 6000 RTP/AVP 0
+a=rtpmap:0 PCMU/8000 
+
+""",
+    "sip.request-uri": "sip:service@192.168.0.23:5060",
+    "sip.request-uri-host": "192.168.0.23",
+    "sip.request-uri-port": 5060,
+    "sip.request-uri-user": "service",
+    "sip.src": "192.168.0.17:5060",
+    "sip.to": "service <sip:service@192.168.0.23:5060>",
+    "sip.transport": "udp",
+    "sip.unixtimenano": 1523978793217683000,
+    "type": "sip"
+  },
+  "_type": "doc",
+  "_version": 1,
+  "found": true
+}
+```
+
+
+```json
+{
   "_index" : "packetbeat-7.0.0-alpha1-2018.04.18",
   "_type" : "doc",
   "_id" : "vDw21GIB6soIUJW6xglP",

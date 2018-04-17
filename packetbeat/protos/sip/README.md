@@ -197,8 +197,8 @@ a=rtpmap:0 PCMU/8000
   "_source": {
     "@timestamp": "2018-04-17T15:26:33.217Z",
     "beat": {
-      "hostname": "TJ-X220-LNX",
-      "name": "TJ-X220-LNX",
+      "hostname": "Elasticsearch1",
+      "name": "Elasticsearch1",
       "version": "7.0.0-alpha1"
     },
     "sip.body": {

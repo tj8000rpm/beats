@@ -20,6 +20,58 @@
 - A SIP header might be exsist multiple lines(eg. Via).
 - The description order of the SIP header has a meaning.
 - Each SIP header is sotred as dict and thi dict has header values as array.
+- Compact form will convert and process as longer form.(``t: <sip:foo@example.com`` stored ``{"sip.headers.to": "<sip:foo@example.com>"}``)
+
+#### parse detail mode
+- SIP headers and Requst-URI will be parsed more detail when ``parse_detail`` parameter set ``true`` in ``packetbeat.yml`` at ``sip`` directive.
+ - example case from(to)
+ - input>> From: "user"<sip:0312341234@bob.com:5060;transport=udp>;tag=zxcvb;otheroption
+ - output>
+```
+{
+    "sip.from":"\"user\"<sip:0312341234@bob.com:5060;transport=udp>;tag=zxcvb;otheroption",
+    "sip.headers.from.raw":"\"user\"<sip:0312341234@bob.com:5060;transport=udp>;tag=zxcvb;otheroption",
+    "sip.headers.from.display":"user",
+    "sip.headers.from.user":"0312341234",
+    "sip.headers.from.host":"bob.com",
+    "sip.headers.from.port":5060,
+    "sip.headers.from.param":["tag=zxcvb","otheroption"]
+    "sip.headers.from.uri-param":["transport=udp"]
+}
+```
+ - example case cseq
+ - input>> CSeq: 1 INVITE 
+ - output>
+```
+{
+    "sip.cseq":"1 INVITE",
+    "sip.headers.cseq.raw":"1 INVITE",
+    "sip.headers.cseq.number":1,
+    "sip.headers.cseq.method":"INVITE"
+}
+```
+ - example case request-uri
+ - input>> INVITE sip:9012341234;rn=9012340000;npdi=yes@hoge.com:5060;transport=udp;user=phone SIP/2.0
+ - output>
+```
+{
+    "sip.request-uri":"sip:9012341234;rn=9012340000;npdi=yes@hoge.com:5060;transport=udp;user=phone"
+    "sip.request-uri-user":"9012341234;rn=9012340000;npdi=yes",
+    "sip.request-uri-host":"hoge.com",
+    "sip.request-uri-port":"5060",
+    "sip.request-uri-params":["transport=udp","user=phone"]
+}
+```
+ - example case request-uri(telephone-subscriber)
+ - input>> INVITE tel:+819012341234;phone-context=+1234;vnd.company.option=foo SIP/2.0
+ - output>
+```
+{
+    "sip.request-uri":"tel:+819012341234;phone-context=+1234;vnd.company.option=foo"
+    "sip.request-uri-host":"+819012341234",
+    "sip.request-uri-params":["phone-context=+1234","vnd.company.option=foo"]
+}
+```
 
 #### SIP Body
 - SIP allowed having mulitple type of body.
@@ -28,7 +80,7 @@
 #### Raw message
 - Recived raw message is stored in ``raw`` field as text value.
 
-#### Sample JSON Output
+#### Sample JSON Output : Normal
 ```json
 {
    "_index": "packetbeat-7.0.0-alpha1-2018.01.17",
@@ -136,55 +188,161 @@ a=rtpmap:0 PCMU/8000
 }
 ```
 
+#### Sample JSON Output : Detail
+
+```json
+{
+  "_index" : "packetbeat-7.0.0-alpha1-2018.04.18",
+  "_type" : "doc",
+  "_id" : "vDw21GIB6soIUJW6xglP",
+  "_version" : 1,
+  "found" : true,
+  "_source" : {
+    "@timestamp" : "2018-04-17T15:26:32.714Z",
+    "sip.body" : {
+      "application/sdp" : {
+        "t" : [
+          "0 0"
+        ],
+        "m" : [
+          "audio 6000 RTP/AVP 0"
+        ],
+        "a" : [
+          "rtpmap:0 PCMU/8000"
+        ],
+        "v" : [
+          "0"
+        ],
+        "o" : [
+          "user1 53655765 2353687637 IN IP4 127.0.1.1"
+        ],
+        "s" : [
+          "-"
+        ],
+        "c" : [
+          "IN IP4 127.0.1.1"
+        ]
+      }
+    },
+    "sip.method" : "INVITE",
+    "sip.raw" : """
+INVITE sip:service@192.168.0.23:5060 SIP/2.0
+Via: SIP/2.0/UDP 127.0.1.1:5060;branch=z9hG4bK-30404-1-0
+From: sipp <sip:sipp@127.0.1.1:5060>;tag=30404SIPpTag001
+To: service <sip:service@192.168.0.23:5060>
+Call-ID: 1-30404@127.0.1.1
+CSeq: 1 INVITE
+Contact: sip:sipp@127.0.1.1:5060
+Max-Forwards: 70
+Subject: Performance Test
+Content-Type: application/sdp
+Content-Length:   129
+
+v=0
+o=user1 53655765 2353687637 IN IP4 127.0.1.1
+s=-
+c=IN IP4 127.0.1.1
+t=0 0
+m=audio 6000 RTP/AVP 0
+a=rtpmap:0 PCMU/8000 
+
+""",
+    "sip.to" : "service <sip:service@192.168.0.23:5060>",
+    "sip.request-uri" : "sip:service@192.168.0.23:5060",
+    "sip.from" : "sipp <sip:sipp@127.0.1.1:5060>;tag=30404SIPpTag001",
+    "type" : "sip",
+    "sip.dst" : "192.168.0.23:5060",
+    "sip.unixtimenano" : 1523978792714915000,
+    "sip.transport" : "udp",
+    "sip.request-uri-host" : "192.168.0.23",
+    "sip.call-id" : "1-30404@127.0.1.1",
+    "sip.src" : "192.168.0.17:5060",
+    "sip.request-uri-port" : 5060,
+    "sip.request-uri-user" : "service",
+    "sip.cseq" : "1 INVITE",
+    "sip.headers" : {
+      "contact" : [
+        {
+          "port" : 5060,
+          "raw" : "sip:sipp@127.0.1.1:5060",
+          "user" : "sipp",
+          "host" : "127.0.1.1"
+        }
+      ],
+      "cseq" : [
+        {
+          "number" : 1,
+          "method" : "INVITE",
+          "raw" : "1 INVITE"
+        }
+      ],
+      "via" : [
+        {
+          "raw" : "SIP/2.0/UDP 127.0.1.1:5060;branch=z9hG4bK-30404-1-0"
+        }
+      ],
+      "from" : [
+        {
+          "display" : "sipp",
+          "user" : "sipp",
+          "host" : "127.0.1.1",
+          "port" : 5060,
+          "params" : [
+            "tag=30404SIPpTag001"
+          ],
+          "raw" : "sipp <sip:sipp@127.0.1.1:5060>;tag=30404SIPpTag001"
+        }
+      ],
+      "to" : [
+        {
+          "raw" : "service <sip:service@192.168.0.23:5060>",
+          "display" : "service",
+          "user" : "service",
+          "host" : "192.168.0.23",
+          "port" : 5060
+        }
+      ],
+      "call-id" : [
+        {
+          "raw" : "1-30404@127.0.1.1"
+        }
+      ],
+      "content-length" : [
+        {
+          "raw" : "129",
+          "number" : 129
+        }
+      ],
+      "max-forwards" : [
+        {
+          "raw" : "70",
+          "number" : 70
+        }
+      ],
+      "subject" : [
+        {
+          "raw" : "Performance Test"
+        }
+      ],
+      "content-type" : [
+        {
+          "raw" : "application/sdp"
+        }
+      ]
+    },
+    "beat" : {
+      "name" : "TJ-X220-LNX",
+      "hostname" : "TJ-X220-LNX",
+      "version" : "7.0.0-alpha1"
+    }
+  }
+}
+```
+
 #### TCP
 * ``transport=tcp`` is not supported yet.
 
 #### TODO
-* parse detail mode
- - example case from(to)
- - input>> From: "user"<sip:0312341234@bob.com>;tag=zxcvb;otheroption
- - output>
-```
-{
-    "sip.from.raw":"\"user\"<sip:0312341234@bob.com>;tag=zxcvb;otheroption",
-    "sip.from.display-name":"user",
-    "sip.from.user":"0312341234",
-    "sip.from.host":"bob.com",
-    "sip.from.param":["tag=zxcvb","otheroption"]
-}
-```
- - example case cseq
- - input>> CSeq: 1 INVITE 
- - output>
-```
-{
-    "sip.cseq.raw":"1 INVITE",
-    "sip.cseq.number":1,
-    "sip.cseq.method":"INVITE"
-}
-```
- - example case request-uri
- - input>> INVITE sip:9012341234;rn=9012340000;npdi=yes@hoge.com:5060;transport=udp;user=phone SIP/2.0
- - output>
-```
-{
-    "sip.request-uri.raw":"sip:9012341234;rn=9012340000;npdi=yes@hoge.com:5060;transport=udp;user=phone"
-    "sip.request-uri.user":"9012341234;rn=9012340000;npdi=yes",
-    "sip.request-uri.host":"hoge.com",
-    "sip.request-uri.port":"5060",
-    "sip.request-uri.params":["transport=udp","user=phone"]
-}
-```
- - example case request-uri(telephone-subscriber)
- - input>> INVITE tel:+819012341234;phone-context=+1234;vnd.company.option=foo SIP/2.0
- - output>
-```
-{
-    "sip.request-uri.raw":"tel:+819012341234;phone-context=+1234;vnd.company.option=foo"
-    "sip.request-uri.user":"+819012341234",
-    "sip.request-uri.params":["phone-context=+1234","vnd.company.option=foo"]
-}
-```
 
 * In case of body was encoded, Content-encode
 * SIP/TCP

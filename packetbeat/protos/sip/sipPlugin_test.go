@@ -21,10 +21,14 @@ func TestInit(t *testing.T) {
 
 func TestInitDetailOption(t *testing.T){
     // Detail of headers
-    //sip.parseSet = make(map[string]int)
     sip:=sipPlugin{}
+    cfg:=defaultConfig
+    sip.setFromConfig(&cfg)
+
+    sip.useDefaultHeaders=true
     sip.initDetailOption()
 
+    assert.Equal(t, 14                       , len(sip.parseSet)                   , "parseSet size will be only [2]"         )
     assert.Equal(t, SIP_DETAIL_NAME_ADDR     , sip.parseSet["from"                ], "Initiation fiald, from"                 )
     assert.Equal(t, SIP_DETAIL_NAME_ADDR     , sip.parseSet["to"                  ], "Initiation fiald, to"                   )
     assert.Equal(t, SIP_DETAIL_NAME_ADDR     , sip.parseSet["contact"             ], "Initiation fiald, contact"              )
@@ -40,31 +44,83 @@ func TestInitDetailOption(t *testing.T){
     assert.Equal(t, SIP_DETAIL_INT           , sip.parseSet["session-expires"     ], "Initiation fiald, session-expires"      )
     assert.Equal(t, SIP_DETAIL_INT           , sip.parseSet["min-se"              ], "Initiation fiald, min-se"               )
 }
+
+func TestInitDetailOptionWithOverwriteFlag(t *testing.T){
+    // Detail of headers
+    //sip.parseSet = make(map[string]int)
+    sip:=sipPlugin{}
+    cfg:=defaultConfig
+    sip.setFromConfig(&cfg)
+
+    sip.useDefaultHeaders=false
+    sip.initDetailOption()
+
+    assert.Equal(t, 2                        , len(sip.parseSet)                   , "parseSet size will be only [2]"         )
+    assert.Equal(t, SIP_DETAIL_INT_METHOD    , sip.parseSet["cseq"                ], "Initiation fiald, cseq"                 )
+    assert.Equal(t, SIP_DETAIL_INT_INT_METHOD, sip.parseSet["rack"                ], "Initiation fiald, rack"                 )
+}
+
+func TestInitDetailOptionWithOverwriteFlagAndAddtionalHeaderFromSetting(t *testing.T){
+    // Detail of headers
+    //sip.parseSet = make(map[string]int)
+    sip:=sipPlugin{}
+    cfg:=defaultConfig
+    sip.setFromConfig(&cfg)
+
+    sip.useDefaultHeaders=false
+    sip.headersToParseAsURI=[]string{"X-Original-Header1","X-Original-Header2"}
+    sip.headersToParseAsInt=[]string{"X-Original-Header3","X-Original-Header4"}
+    sip.initDetailOption()
+
+    assert.Equal(t, 6                        , len(sip.parseSet)                   , "parseSet size will be only [2]"         )
+    assert.Equal(t, SIP_DETAIL_NAME_ADDR     , sip.parseSet["x-original-header1"  ], "Initiation fiald, p-preferred-identity" )
+    assert.Equal(t, SIP_DETAIL_NAME_ADDR     , sip.parseSet["x-original-header2"  ], "Initiation fiald, p-preferred-identity" )
+    assert.Equal(t, SIP_DETAIL_INT           , sip.parseSet["x-original-header3"  ], "Initiation fiald, p-preferred-identity" )
+    assert.Equal(t, SIP_DETAIL_INT           , sip.parseSet["x-original-header4"  ], "Initiation fiald, p-preferred-identity" )
+    assert.Equal(t, SIP_DETAIL_INT_METHOD    , sip.parseSet["cseq"                ], "Initiation fiald, cseq"                 )
+    assert.Equal(t, SIP_DETAIL_INT_INT_METHOD, sip.parseSet["rack"                ], "Initiation fiald, rack"                 )
+}
+
 func TestSetFromConfig(t *testing.T) {
     sip:=sipPlugin{}
-    cfg:=sipConfig{}
+    cfg:=defaultConfig
+    sip.setFromConfig(&cfg)
+
     cfg.Ports=[]int{5060,5061}
     cfg.ParseDetail=true
+    cfg.UseDefaultHeaders=false
+    cfg.HeadersToParseAsURI=[]string{"X-Original-Header1","X-Original-Header2"}
+    cfg.HeadersToParseAsInt=[]string{"X-Original-Header3","X-Original-Header4"}
 
     sip.setFromConfig(&cfg)
     assert.Equal(t, 5060 , sip.ports[0]      , "There should be included 5060." )
     assert.Equal(t, 5061 , sip.ports[1]      , "There should be included 5061." )
-    assert.Equal(t, 2     , len(sip.ports)   , "There should be included 5060." )
-    assert.Equal(t, true , sip.parseDetail   , "There should be included 5061." )
+    assert.Equal(t, 2    , len(sip.ports)    , "Ports option array size should be 2." )
+    assert.Equal(t, true , sip.parseDetail   , "Parse Detail flag should be true." )
+    assert.Equal(t, false, sip.useDefaultHeaders   , "Parse Detail flag should be false." )
+    assert.Equal(t, 2    , len(sip.headersToParseAsURI)  , "The size should be 1" )
+    assert.Equal(t, "X-Original-Header1" , sip.headersToParseAsURI[0], "There should be included X-Original-Header1." )
+    assert.Equal(t, "X-Original-Header2" , sip.headersToParseAsURI[1], "There should be included X-Original-Header1." )
+    assert.Equal(t, 2    , len(sip.headersToParseAsInt)  , "The size should be 1" )
+    assert.Equal(t, "X-Original-Header3" , sip.headersToParseAsInt[0], "There should be included X-Original-Header2." )
+    assert.Equal(t, "X-Original-Header4" , sip.headersToParseAsInt[1], "There should be included X-Original-Header2." )
 }
 
 func TestSetFromConfigDefault(t *testing.T) {
     sip:=sipPlugin{}
-    cfg:=sipConfig{}
-
+    cfg:=defaultConfig
     sip.setFromConfig(&cfg)
-    //assert.Equal(t, 5060  , sip.ports[0]     , "There should be included 5060." )
+
     assert.Equal(t, 0     , len(sip.ports)   , "There should be included 5060." )
     assert.Equal(t, false , sip.parseDetail  , "There should be included 5061." )
+    assert.Equal(t, true  , sip.useDefaultHeaders  , "There should be included 5061." )
 }
 
 func TestGetPorts(t *testing.T) {
     sip:=sipPlugin{}
+    cfg:=defaultConfig
+    sip.setFromConfig(&cfg)
+
     sip.ports=[]int{5060,5061,1123,5555}
     ports:=sip.GetPorts()
 
@@ -76,6 +132,8 @@ func TestGetPorts(t *testing.T) {
 
 func TestPublishMessage(t *testing.T) {
     sip:=sipPlugin{}
+    cfg:=defaultConfig
+    sip.setFromConfig(&cfg)
 
     raw_text   :="test raw string"
     method_text:="INVITE"
@@ -107,6 +165,9 @@ func TestPublishMessage(t *testing.T) {
 
 func TestPublishMessageWithDetailOptionRequest(t *testing.T) {
     sip:=sipPlugin{}
+    cfg:=defaultConfig
+    sip.setFromConfig(&cfg)
+
     sip.parseDetail=true
     sip.initDetailOption()
     raw_text   :="test raw string"
@@ -235,6 +296,9 @@ func TestPublishMessageWithDetailOptionRequest(t *testing.T) {
 
 func TestPublishMessageWithDetailOptionResponse(t *testing.T) {
     sip:=sipPlugin{}
+    cfg:=defaultConfig
+    sip.setFromConfig(&cfg)
+
     sip.parseDetail=true
     sip.initDetailOption()
     raw_text   :="test raw string"
@@ -330,8 +394,45 @@ func TestPublishMessageWithDetailOptionResponse(t *testing.T) {
     assert.Equal(t, cseq_method  , headers_p[0]["method"], "Invalid cseq method" )
 }
 
+func TestPublishMessageWithoutRawMessage(t *testing.T) {
+    sip:=sipPlugin{}
+    cfg:=defaultConfig
+    cfg.IncludeRawMessage=false
+    sip.setFromConfig(&cfg)
+
+    raw_text   :="test raw string"
+    method_text:="INVITE"
+    phrase_text:="OK"
+    ipTuple := common.NewIPPortTuple(4,
+        net.ParseIP("10.0.0.1"), 1111,
+        net.ParseIP("10.0.0.2"), 2222)
+    msg:=sipMessage{transport:0, raw:common.NetString(raw_text),
+                    tuple: ipTuple , method: common.NetString(method_text),
+                    requestUri: common.NetString("sip:test"),
+                    statusCode: uint16(200), statusPhrase: common.NetString(phrase_text),
+                    from: common.NetString("from"), to: common.NetString("to"),
+                    cseq: common.NetString("cseq"), callid: common.NetString("callid"),
+                    contentlength: 10}
+
+    // avoid to sip.results initialization error
+    sip.publishMessage(&msg)
+    assert.Nil(t, sip.results , "sip.results should still nil." )
+
+    store:= &eventStore{}
+
+    sip.results=store.publish
+    sip.publishMessage(&msg)
+    assert.Equal(t, 1, store.size() , "There should be added one packet in store after publish." )
+    assert.Equal(t, phrase_text, store.events[0].Fields["sip.status-phrase"], "Compare published packet and stored data." )
+    assert.Equal(t, nil        , store.events[0].Fields["sip.method"]       , "Compare published packet and stored data." )
+    assert.Equal(t, nil        , store.events[0].Fields["sip.raw"]          , "Compare published packet and stored data." )
+}
+
 func TestCreateSIPMessage(t *testing.T) {
     sip:=sipPlugin{}
+    cfg:=defaultConfig
+    sip.setFromConfig(&cfg)
+
     var trans transport
     trans=transportTCP
     garbage := []byte( "Go is an open source programming language "   +
@@ -866,6 +967,9 @@ func TestPaseDetailURI(t *testing.T){
     var uri string
     var user_info string; var host string; var port string; var uri_params []string
     sip:=sipPlugin{}
+    cfg:=defaultConfig
+    sip.setFromConfig(&cfg)
+
 
     uri=`sip:0312341234@10.0.0.1:5060`
     user_info, host, port, uri_params=sip.parseDetailURI(uri)

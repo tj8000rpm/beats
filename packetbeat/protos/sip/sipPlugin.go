@@ -20,9 +20,15 @@ import (
  **/
 type sipPlugin struct {
     // Configuration data.
-    ports              []int
-    parseDetail        bool
-    parseSet           map[string]int
+    ports               []int
+    includeRawMessage   bool
+    includeHeaders      bool
+    includeBodies       bool
+    parseDetail         bool
+    useDefaultHeaders   bool
+    headersToParseAsURI []string
+    headersToParseAsInt []string
+    parseSet            map[string]int
 
     results protos.Reporter // Channel where results are pushed.
 }
@@ -42,26 +48,45 @@ func (sip *sipPlugin) init(results protos.Reporter, config *sipConfig) error {
 func (sip *sipPlugin) initDetailOption(){
     // Detail of headers
     sip.parseSet = make(map[string]int)
-    sip.parseSet["from"                ] = SIP_DETAIL_NAME_ADDR
-    sip.parseSet["to"                  ] = SIP_DETAIL_NAME_ADDR
-    sip.parseSet["contact"             ] = SIP_DETAIL_NAME_ADDR
-    sip.parseSet["record-route"        ] = SIP_DETAIL_NAME_ADDR
-    sip.parseSet["p-asserted-identity" ] = SIP_DETAIL_NAME_ADDR
-    sip.parseSet["p-preferred-identity"] = SIP_DETAIL_NAME_ADDR
+
+    if sip.useDefaultHeaders{
+        sip.parseSet["from"                ] = SIP_DETAIL_NAME_ADDR
+        sip.parseSet["to"                  ] = SIP_DETAIL_NAME_ADDR
+        sip.parseSet["contact"             ] = SIP_DETAIL_NAME_ADDR
+        sip.parseSet["record-route"        ] = SIP_DETAIL_NAME_ADDR
+        sip.parseSet["p-asserted-identity" ] = SIP_DETAIL_NAME_ADDR
+        sip.parseSet["p-preferred-identity"] = SIP_DETAIL_NAME_ADDR
+    }
+    for _,header := range sip.headersToParseAsURI{
+        header=strings.ToLower(strings.TrimSpace(header))
+        sip.parseSet[header] = SIP_DETAIL_NAME_ADDR
+    }
     sip.parseSet["cseq"                ] = SIP_DETAIL_INT_METHOD
     sip.parseSet["rack"                ] = SIP_DETAIL_INT_INT_METHOD
-    sip.parseSet["rseq"                ] = SIP_DETAIL_INT
-    sip.parseSet["content-length"      ] = SIP_DETAIL_INT
-    sip.parseSet["max-forwards"        ] = SIP_DETAIL_INT
-    sip.parseSet["expires"             ] = SIP_DETAIL_INT
-    sip.parseSet["session-expires"     ] = SIP_DETAIL_INT
-    sip.parseSet["min-se"              ] = SIP_DETAIL_INT
+    if sip.useDefaultHeaders{
+        sip.parseSet["rseq"                ] = SIP_DETAIL_INT
+        sip.parseSet["content-length"      ] = SIP_DETAIL_INT
+        sip.parseSet["max-forwards"        ] = SIP_DETAIL_INT
+        sip.parseSet["expires"             ] = SIP_DETAIL_INT
+        sip.parseSet["session-expires"     ] = SIP_DETAIL_INT
+        sip.parseSet["min-se"              ] = SIP_DETAIL_INT
+    }
+    for _,header := range sip.headersToParseAsInt{
+        header=strings.ToLower(strings.TrimSpace(header))
+        sip.parseSet[header] = SIP_DETAIL_INT
+    }
 }
 
-// Set config values sip ports.
+// Set config values sip ports and options.
 func (sip *sipPlugin) setFromConfig(config *sipConfig) error {
-    sip.ports       = config.Ports
-    sip.parseDetail = config.ParseDetail
+    sip.ports               = config.Ports
+    sip.includeRawMessage   = config.IncludeRawMessage
+    sip.includeHeaders      = config.IncludeHeaders
+    sip.includeBodies       = config.IncludeBodies
+    sip.parseDetail         = config.ParseDetail
+    sip.useDefaultHeaders   = config.UseDefaultHeaders
+    sip.headersToParseAsURI = config.HeadersToParseAsURI
+    sip.headersToParseAsInt = config.HeadersToParseAsInt
     return nil
 }
 
@@ -83,7 +108,9 @@ func (sip *sipPlugin) publishMessage(msg *sipMessage) {
     fields["sip.unixtimenano"] = timestamp.UnixNano()
     fields["type"] = "sip"
     fields["sip.transport"] = msg.transport.String()
-    fields["sip.raw"] = string(msg.raw)
+    if sip.includeRawMessage{
+        fields["sip.raw"] = string(msg.raw)
+    }
     fields["sip.src"] = fmt.Sprintf("%s:%d",msg.tuple.SrcIP,msg.tuple.SrcPort)
     fields["sip.dst"] = fmt.Sprintf("%s:%d",msg.tuple.DstIP,msg.tuple.DstPort)
 
@@ -101,23 +128,27 @@ func (sip *sipPlugin) publishMessage(msg *sipMessage) {
     fields["sip.call-id"] = fmt.Sprintf("%s",msg.callid)
 
     sipHeaders := common.MapStr{}
-    fields["sip.headers"] = sipHeaders
+    if sip.includeHeaders{
+        fields["sip.headers"] = sipHeaders
 
-    if msg.headers != nil{
-        for header,lines := range *(msg.headers){
-            sipHeaders[header] = lines
+        if msg.headers != nil{
+            for header,lines := range *(msg.headers){
+                sipHeaders[header] = lines
+            }
         }
     }
 
-    sipBody := common.MapStr{}
-    fields["sip.body"] = sipBody
+    if sip.includeBodies{
+        sipBody := common.MapStr{}
+        fields["sip.body"] = sipBody
 
-    if msg.body !=nil{
-        for content,keyval := range (msg.body){
-            contetMap := common.MapStr{}
-            sipBody[content] = contetMap
-            for key,val_lines := range *keyval{
-                contetMap[key] = val_lines
+        if msg.body !=nil{
+            for content,keyval := range (msg.body){
+                contetMap := common.MapStr{}
+                sipBody[content] = contetMap
+                for key,val_lines := range *keyval{
+                    contetMap[key] = val_lines
+                }
             }
         }
     }
@@ -417,7 +448,4 @@ func (sip *sipPlugin) parseDetailNameAddr(addr string) (display_name string,user
 
     return display_name,user_info, host, port , addrparams, params
 }
-
-
-
 

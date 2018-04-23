@@ -1,30 +1,50 @@
-### Implementation plan
+## Implementation plan
 
-#### Published for each SIP message(request or response)
+### Published for each SIP message(request or response)
 - SIP is not a one to one message with request and response. Also order to each message is not determined(a response may be sent after previous response).
 - Therefore the SIP response and SIP request is published when packetbeat received the message immidiatory.
 - If you need all SIP messages in throughout of SIP dialog, you need to retrieve from Elasticsearch using the SIP Call-ID field etc.
 
-#### Additional timestamp
+## Output/Published data
+
+### Additional timestamp
 - Default timestamp field(@timestamp) precision is not sufficient(the sip response is often send immediately when request received eg. 100 Trying).
 - Therefore I added the ``sip.unixtimenano``(int64) in order to keep the message order.
 
-#### Request-Line,Status-Line
+### Request-Line,Status-Line
 - In case of SIP request received, stored ``sip.method``(eg.INVITE,BYE,ACK,PRACK) and ``sip.request-uri``.
 - In case of SIP response received, stored ``sip.status-code``(eg.200,404) and ``sip.status-phrase``(eg. OK, Ringing)
 
-#### Mandatory headers
+### Mandatory headers
 - ``sip.from``,``sip.to``,``sip.call-id``,``sip.cseq`` are SIP mandatory headers.
 
-#### SIP Headers
+### SIP Headers
+- Option ``include_headers`` : If you select true(default true), output JSON contain parsed SIP headers, see below sample's ``sip.headers`` field.
 - A SIP header might be exsist multiple lines(eg. Via).
 - The description order of the SIP header has a meaning.
 - Each SIP header is sotred as dict and thi dict has header values as array.
 - Compact form will convert and process as longer form.(``t: <sip:foo@example.com`` stored ``{"sip.headers.to": "<sip:foo@example.com>"}``)
 
-#### parse detail mode
+### SIP Body
+- Option ``include_body`` : If you select true(default true), output JSON contain parsed SIP body, see below sample's ``sip.body`` field.
+- SIP allowed having mulitple type of body.
+- *Currently it only supports sdp*
+
+### Raw message
+- Option ``include_raw`` : If you select true(default true), output JSON contain raw SIP message(sip header and body), see below sample's ``sip.raw`` field.
+- Recived raw message is stored in ``raw`` field as text value.
+
+### parse detail mode
+- Option ``parse_detail`` : If you select true(default false), outputed parsed SIP headers are more parse detail like contained SIP-URI, Name-addrs and Integer etc header field, see below **Sample Full JSON Output : Parse Detail Mode** section.
+- Option ``use_default_headers`` : If you select true(default true), SIP headers [From, To, Contact, Record-Route, P-Asserted-Identity, P-Preferred-Identity] are parsed detail as SIP-URI or Name-addr, SIP headers [RSeq, Content-Length, Max-Forwards, Expires, Session-Expires, Min-SE] are parse detail as Integer. If you select false, only parse SIP hdeaders [CSeq, Rack].
 - SIP headers and Requst-URI will be parsed more detail when ``parse_detail`` parameter set ``true`` in ``packetbeat.yml`` at ``sip`` directive.
- - example case from(to)
+- You can parse any SIP headers using below option **Addtional/Cusotm parse target**.
+
+#### Addtional/Custom parse target
+- Option ``parse_as_uri_for`` : If you describe header names as list, you can add parse detail header target as SIP-URI or Name-addr.
+- Option ``parse_as_int_for`` : If you describe header names as list, you can add parse detail header target as Integer.
+
+#### example case from(to)
  - input>> From: "user"<sip:0312341234@bob.com:5060;transport=udp>;tag=zxcvb;otheroption
  - output>
 ```
@@ -39,7 +59,8 @@
     "sip.headers.from.uri-param":["transport=udp"]
 }
 ```
- - example case cseq
+
+#### example case cseq
  - input>> CSeq: 1 INVITE 
  - output>
 ```
@@ -50,7 +71,8 @@
     "sip.headers.cseq.method":"INVITE"
 }
 ```
- - example case request-uri
+
+#### example case request-uri
  - input>> INVITE sip:9012341234;rn=9012340000;npdi=yes@hoge.com:5060;transport=udp;user=phone SIP/2.0
  - output>
 ```
@@ -62,7 +84,8 @@
     "sip.request-uri-params":["transport=udp","user=phone"]
 }
 ```
- - example case request-uri(telephone-subscriber)
+ 
+#### example case request-uri(telephone-subscriber)
  - input>> INVITE tel:+819012341234;phone-context=+1234;vnd.company.option=foo SIP/2.0
  - output>
 ```
@@ -73,14 +96,9 @@
 }
 ```
 
-#### SIP Body
-- SIP allowed having mulitple type of body.
-- Currently it only supports sdp
 
-#### Raw message
-- Recived raw message is stored in ``raw`` field as text value.
+### Sample Full JSON Output : Normal Mode
 
-#### Sample JSON Output : Normal
 ```json
 {
    "_index": "packetbeat-7.0.0-alpha1-2018.01.17",
@@ -188,7 +206,7 @@ a=rtpmap:0 PCMU/8000
 }
 ```
 
-#### Sample JSON Output : Detail
+### Sample full JSON Output : Parse Detail Mode
 
 ```json
 {
@@ -341,11 +359,10 @@ a=rtpmap:0 PCMU/8000
 
 
 
-#### TCP
+### TCP
 * ``transport=tcp`` is not supported yet.
 
-#### TODO
-
+### TODO
 * In case of body was encoded, Content-encode
 * SIP/TCP
 * More body parser.

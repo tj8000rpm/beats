@@ -23,7 +23,7 @@ type sipPlugin struct {
     ports               []int
     includeRawMessage   bool
     includeHeaders      bool
-    includeBodies       bool
+    includeBody         bool
     parseDetail         bool
     useDefaultHeaders   bool
     headersToParseAsURI []string
@@ -82,7 +82,7 @@ func (sip *sipPlugin) setFromConfig(config *sipConfig) error {
     sip.ports               = config.Ports
     sip.includeRawMessage   = config.IncludeRawMessage
     sip.includeHeaders      = config.IncludeHeaders
-    sip.includeBodies       = config.IncludeBodies
+    sip.includeBody         = config.IncludeBody  
     sip.parseDetail         = config.ParseDetail
     sip.useDefaultHeaders   = config.UseDefaultHeaders
     sip.headersToParseAsURI = config.HeadersToParseAsURI
@@ -138,7 +138,7 @@ func (sip *sipPlugin) publishMessage(msg *sipMessage) {
         }
     }
 
-    if sip.includeBodies{
+    if sip.includeBody  {
         sipBody := common.MapStr{}
         fields["sip.body"] = sipBody
 

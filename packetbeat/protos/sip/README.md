@@ -1,41 +1,42 @@
-## Implementation plan
+## Implementation
 
 ### Published for each SIP message(request or response)
 - SIP is not a one to one message with request and response. Also order to each message is not determined(a response may be sent after previous response).
 - Therefore the SIP response and SIP request is published when packetbeat received the message immidiatory.
 - If you need all SIP messages in throughout of SIP dialog, you need to retrieve from Elasticsearch using the SIP Call-ID field etc.
 
+### TCP
+* ``transport=tcp`` is not supported yet.
+
 ## Output/Published data
 
 ### Additional timestamp
 - Default timestamp field(@timestamp) precision is not sufficient(the sip response is often send immediately when request received eg. 100 Trying).
-- Therefore I added the ``sip.unixtimenano``(int64) in order to keep the message order.
+- You can sort to keep the message correct order using the ``sip.unixtimenano``(int64) field.
 
 ### Request-Line,Status-Line
 - In case of SIP request received, stored ``sip.method``(eg.INVITE,BYE,ACK,PRACK) and ``sip.request-uri``.
 - In case of SIP response received, stored ``sip.status-code``(eg.200,404) and ``sip.status-phrase``(eg. OK, Ringing)
 
 ### Mandatory headers
-- ``sip.from``,``sip.to``,``sip.call-id``,``sip.cseq`` are SIP mandatory headers.
+- SIP mandatory headers From,To,Call-ID.CSeq are stored in ``sip.from``,``sip.to``,``sip.call-id``,``sip.cseq`` fields.
 
 ### SIP Headers
-- Option ``include_headers`` : If you select true(default true), output JSON contain parsed SIP headers, see below sample's ``sip.headers`` field.
-- A SIP header might be exsist multiple lines(eg. Via).
-- The description order of the SIP header has a meaning.
-- Each SIP header is sotred as dict and thi dict has header values as array.
+- Option ``include_headers`` : If you select true(default true), the outputed JSON contain parsed SIP headers, see below sample's ``sip.headers`` field.
+- A SIP header might be exsisted multiple lines(eg. Via). The description order of the SIP header has a meaning. Each SIP header is sotred as dict and the dict has header values as array.
 - Compact form will convert and process as longer form.(``t: <sip:foo@example.com`` stored ``{"sip.headers.to": "<sip:foo@example.com>"}``)
 
 ### SIP Body
-- Option ``include_body`` : If you select true(default true), output JSON contain parsed SIP body, see below sample's ``sip.body`` field.
+- Option ``include_body`` : If you select true(default true), the outputed JSON contain parsed SIP body, see below sample's ``sip.body`` field.
 - SIP allowed having mulitple type of body.
 - *Currently it only supports sdp*
 
 ### Raw message
-- Option ``include_raw`` : If you select true(default true), output JSON contain raw SIP message(sip header and body), see below sample's ``sip.raw`` field.
+- Option ``include_raw`` : If you select true(default true), the outputed JSON contain raw SIP message(sip header and body), see below sample's ``sip.raw`` field.
 - Recived raw message is stored in ``raw`` field as text value.
 
 ### parse detail mode
-- Option ``parse_detail`` : If you select true(default false), outputed parsed SIP headers are more parse detail like contained SIP-URI, Name-addrs and Integer etc header field, see below **Sample Full JSON Output : Parse Detail Mode** section.
+- Option ``parse_detail`` : If you select true(default false), the outputed parsed SIP headers are more parse detail like contained SIP-URI, Name-addrs and Integer etc header field, see below **Sample Full JSON Output : Parse Detail Mode** section.
 - Option ``use_default_headers`` : If you select true(default true), SIP headers [From, To, Contact, Record-Route, P-Asserted-Identity, P-Preferred-Identity] are parsed detail as SIP-URI or Name-addr, SIP headers [RSeq, Content-Length, Max-Forwards, Expires, Session-Expires, Min-SE] are parse detail as Integer. If you select false, only parse SIP hdeaders [CSeq, Rack].
 - SIP headers and Requst-URI will be parsed more detail when ``parse_detail`` parameter set ``true`` in ``packetbeat.yml`` at ``sip`` directive.
 - You can parse any SIP headers using below option **Addtional/Cusotm parse target**.
@@ -359,10 +360,8 @@ a=rtpmap:0 PCMU/8000
 
 
 
-### TCP
-* ``transport=tcp`` is not supported yet.
 
-### TODO
+## TODO
 * In case of body was encoded, Content-encode
 * SIP/TCP
 * More body parser.

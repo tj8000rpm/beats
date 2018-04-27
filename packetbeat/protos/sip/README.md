@@ -1,3 +1,12 @@
+# SIP(Session Initiation Protocol) for packetbeat
+The SIP(Session Initiation Protocol) is a communications protocol for signaling and controlling multimedia communication sessions. SIP is used many VoIP applications at not only enterprise uses but also telecom careers.
+
+SIP is text-base protocol like HTTP. But SIP has various unique features like :
+- SIP is server-client model, but it roles may changes call by call.
+- SIP is request-response model, but server may (usualy) reply many responses for one request.
+- There many requests and responses in one call.
+- It is not know when the call will end.
+
 ## Implementation
 
 ### Published for each SIP message(request or response)
@@ -358,13 +367,10 @@ a=rtpmap:0 PCMU/8000
 }
 ```
 
-
-
-
 ## TODO
 * In case of body was encoded, Content-encode
 * SIP/TCP
-* More body parser.
+* More SIP content support.
  - ISUP(SIP-I/SIP-T)
  - multipart/form-data boundary
 

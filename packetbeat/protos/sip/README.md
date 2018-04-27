@@ -17,6 +17,43 @@ SIP is text-base protocol like HTTP. But SIP has various unique features like :
 ### TCP
 * ``transport=tcp`` is not supported yet.
 
+## Configuration
+
+```yaml
+- type: sip
+  # Configure the ports where to listen for SIP traffic. You can disable
+  # the SIP protocol by commenting out the list of ports.
+  ports: [5060]
+
+  # Contain parsed SIP headers(defualt true)
+  include_headers: true 
+  
+  # Contain parsed SIP body(defualt true)
+  include_body: true
+
+  # Contain raw SIP message(sip header and body,defualt true)
+  include_raw: true
+
+  # SIP headers more parse detail(default false)
+  parse_detail: false
+
+  # SIP header which is targeted to detail parse are pre-defined (default true)
+  #  - As SIP-URI or Name-addr: [From, To, Contact, Record-Route, P-Asserted-Identity, P-Preferred-Identity]
+  #  - As Integer: [RSeq, Content-Length, Max-Forwards, Expires, Session-Expires, Min-SE]
+  use_default_headers: true
+
+  # Define headers that to parse as SIP-URI or Name-Addr yourself in parse detail mode
+  parse_as_uri_for:
+    - X-Your-Original-URI
+    - X-Your-Addtional-URI
+
+  # Define headers that to parse as Integer yourself in parse detail mode
+  parse_as_int_for:
+    - X-Your-Original-Number
+    - X-Your-Addtional-URI
+```
+
+
 ## Output/Published data
 
 ### Additional timestamp

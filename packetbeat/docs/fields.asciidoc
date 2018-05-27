@@ -31,6 +31,7 @@ grouped in the following categories:
 * <<exported-fields-pgsql>>
 * <<exported-fields-raw>>
 * <<exported-fields-redis>>
+* <<exported-fields-sip>>
 * <<exported-fields-thrift>>
 * <<exported-fields-tls>>
 * <<exported-fields-trans_event>>

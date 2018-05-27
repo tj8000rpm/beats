@@ -2769,6 +2769,133 @@ The return value of the Redis command in a human readable format.
 If the Redis command has resulted in an error, this field contains the error message returned by the Redis server.
 
 
+[[exported-fields-sip]]
+== SIP fields
+
+SIP specific event fields.
+
+[float]
+=== `sip.method`
+
+type: keyword
+
+example: INVITE
+
+SIP Request Method
+
+
+
+[float]
+=== `sip.request-uri`
++
+--
+type: keyword
+
+example: sip:hoge@example.com:5060;transport=udp
+
+SIP Request URI
+
+
+[float]
+=== `sip.status-code`
+
+type: long
+
+example: 200
+
+SIP Response code, status code
+
+
+[float]
+=== `sip.status-phrase`
+
+type: keyword
+
+example: OK
+
+SIP Response , status phrase
+
+
+[float]
+=== `sip.from`
+
+type: keyword
+
+example: "sipp" <sip:sipp@10.0.0.1>;tag=2363SIPpTag001
+
+SIP From header value
+
+
+[float]
+=== `sip.to`
+
+type: keyword
+
+example: "sut" <sip:6505550252@192.168.0.1>;tag=16489SIPpTag012
+
+SIP To header value
+
+
+[float]
+=== `sip.call-id`
+
+type: keyword
+
+example: 
+
+SIP Call-ID header value
+
+
+[float]
+=== `sip.cseq`
+
+type: keyword
+
+example: 1 INVITE
+
+SIP CSeq header value
+
+
+[float]
+=== `sip.body`
+
+type: object
+
+The body of the SIP message.
+
+
+[float]
+=== `sip.src`
+
+type: keyword
+
+example: 192.168.0.1:5060
+
+Source IP address and port
+
+
+[float]
+=== `sip.dst`
+
+type: keyword
+
+example: 192.168.0.1:5060
+
+Destination IP address and port
+
+
+[flaot]
+=== `unixtimenano`
+
+type: long
+
+example: 1516199666016756000
+
+unixtime as nanosec
+
+
+
+
 [[exported-fields-thrift]]
 == Thrift-RPC fields
 
